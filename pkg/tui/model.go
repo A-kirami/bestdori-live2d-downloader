@@ -240,14 +240,16 @@ type UpdateDownloadListMsg struct {
 func (m *Model) handleInputState(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "enter" {
 		value := strings.TrimSpace(m.TextInput.Value())
-		if value != "" {
-			m.State = StateLoading
-			select {
-			case m.SearchChan <- value:
-			default:
-			}
-			return m, m.Spinner.Tick
+		if value == "" {
+			m.SetError("请输入角色名称或 Live2D 模型名称")
+			return m, nil
 		}
+		m.State = StateLoading
+		select {
+		case m.SearchChan <- value:
+		default:
+		}
+		return m, m.Spinner.Tick
 	}
 	var cmd tea.Cmd
 	m.TextInput, cmd = m.TextInput.Update(msg)
