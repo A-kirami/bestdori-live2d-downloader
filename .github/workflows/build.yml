@@ -35,7 +35,7 @@ jobs:
         run: go mod download
 
       - name: Build
-        run: go build -o bestdori-live2d-downloader${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+        run: go build -o bestdori-live2d-downloader${{ matrix.os == 'windows-latest' && '.exe' || '' }} ./cmd/bestdori-live2d-downloader
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
