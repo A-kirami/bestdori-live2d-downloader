@@ -312,6 +312,12 @@ func (a *App) handleCharaSearch(input string) bool {
 // handleDirectDownload 处理直接下载请求.
 func (a *App) handleDirectDownload(input string) bool {
 	log.DefaultLogger.Info().Str("input", input).Msg("开始直接下载Live2D")
+
+	// 如果输入已经包含 _rip 后缀，则移除它
+	if strings.HasSuffix(input, "_rip") {
+		input = strings.TrimSuffix(input, "_rip")
+	}
+
 	// 初始化下载列表
 	a.tuiModel.AddDownloadItem(input, 1) // 初始总数为1，后续会更新
 	a.tuiModel.State = "downloading"
