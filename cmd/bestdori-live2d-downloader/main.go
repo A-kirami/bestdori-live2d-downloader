@@ -89,16 +89,26 @@ func (a *App) getLive2dPath(live2dName string) (string, error) {
 		return "", fmt.Errorf("无效的角色ID: %w", err)
 	}
 
+	// 尝试获取角色信息
 	chara, err := a.apiClient.GetChara(a.ctx, charaID)
 	if err != nil {
-		log.DefaultLogger.Error().Int("charaID", charaID).Err(err).Msg("获取角色信息失败")
-		return "", fmt.Errorf("获取角色信息失败: %w", err)
+		// 如果获取角色信息失败，使用角色ID作为目录名
+		log.DefaultLogger.Warn().Int("charaID", charaID).Err(err).Msg("获取角色信息失败，使用角色ID作为目录名")
+		path := filepath.Join(config.Get().Live2dSavePath, fmt.Sprintf("chara_%03d", charaID), parts[1])
+		log.DefaultLogger.Info().Str("path", path).Msg("获取Live2D路径成功")
+		return path, nil
 	}
 
+	// 如果成功获取角色信息，使用角色名作为目录名
 	firstName, ok := chara["firstName"].([]any)[1].(string)
 	if !ok {
-		return "", errors.New("无效的角色名字格式")
+		// 如果无法获取角色名，使用角色ID作为目录名
+		log.DefaultLogger.Warn().Int("charaID", charaID).Msg("无效的角色名字格式，使用角色ID作为目录名")
+		path := filepath.Join(config.Get().Live2dSavePath, fmt.Sprintf("chara_%03d", charaID), parts[1])
+		log.DefaultLogger.Info().Str("path", path).Msg("获取Live2D路径成功")
+		return path, nil
 	}
+
 	path := filepath.Join(config.Get().Live2dSavePath, strings.ToLower(firstName), parts[1])
 	log.DefaultLogger.Info().Str("path", path).Msg("获取Live2D路径成功")
 	return path, nil
