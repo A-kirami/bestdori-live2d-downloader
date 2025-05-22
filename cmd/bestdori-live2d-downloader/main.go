@@ -184,6 +184,121 @@ func (a *App) findChara(name string) (*model.MatchChara, error) {
 	}, nil
 }
 
+// updateCharaCostumes 更新角色服装列表.
+func (a *App) updateCharaCostumes(id int, firstName string, displayName string) bool {
+	// 获取角色服装列表
+	costumes, err := a.apiClient.GetCharaCostumes(a.ctx, id)
+	if err != nil {
+		log.DefaultLogger.Error().Int("charaID", id).Err(err).Msg("获取角色服装列表失败")
+		a.tuiModel.SetError(fmt.Sprintf("获取角色服装列表失败: %v", err))
+		a.tuiModel.State = StateInput
+		return true
+	}
+
+	if len(costumes) == 0 {
+		log.DefaultLogger.Warn().Int("charaID", id).Msg("未找到该角色的 Live2D 模型")
+		a.tuiModel.SetError("未找到该角色的 Live2D 模型")
+		a.tuiModel.State = StateInput
+		return true
+	}
+
+	// 清除之前的错误消息
+	a.tuiModel.ClearError()
+
+	// 更新列表
+	a.tuiModel.CurrentCharaName = firstName
+	if displayName != firstName {
+		a.tuiModel.ExtraCharaName = displayName
+	} else {
+		a.tuiModel.ExtraCharaName = ""
+	}
+	log.DefaultLogger.Info().
+		Str("charaName", firstName).
+		Int("costumesCount", len(costumes)).
+		Msg("找到角色服装列表")
+	a.program.Send(tui.UpdateListMsg{Items: costumes})
+
+	return true
+}
+
+// handleCharaIDSearch 处理角色编号搜索请求.
+func (a *App) handleCharaIDSearch(charaID string) bool {
+	id, err := strconv.Atoi(charaID)
+	if err != nil {
+		log.DefaultLogger.Error().Str("charaID", charaID).Err(err).Msg("无效的角色编号")
+		a.tuiModel.SetError(fmt.Sprintf("无效的角色编号: %s", charaID))
+		a.tuiModel.State = StateInput
+		return true
+	}
+
+	// 获取角色信息
+	chara, err := a.apiClient.GetChara(a.ctx, id)
+	if err != nil {
+		log.DefaultLogger.Error().Int("charaID", id).Err(err).Msg("获取角色信息失败")
+		a.tuiModel.SetError(fmt.Sprintf("获取角色信息失败: %v", err))
+		a.tuiModel.State = StateInput
+		return true
+	}
+
+	// 检查角色信息格式
+	characterNames, ok := chara["characterName"].([]any)
+	if !ok {
+		log.DefaultLogger.Error().Int("charaID", id).Msg("无效的角色名字格式")
+		a.tuiModel.SetError("无效的角色名字格式")
+		a.tuiModel.State = StateInput
+		return true
+	}
+
+	// 确保数组长度足够
+	if len(characterNames) < 4 {
+		log.DefaultLogger.Error().Int("charaID", id).Msg("角色名字数组长度不足")
+		a.tuiModel.SetError("无效的角色名字格式")
+		a.tuiModel.State = StateInput
+		return true
+	}
+
+	// 检查每个元素是否为字符串
+	firstName, ok := characterNames[0].(string)
+	if !ok {
+		log.DefaultLogger.Error().Int("charaID", id).Msg("角色名字格式错误")
+		a.tuiModel.SetError("无效的角色名字格式")
+		a.tuiModel.State = StateInput
+		return true
+	}
+
+	displayName, ok := characterNames[3].(string)
+	if !ok || displayName == "" {
+		displayName = firstName
+	}
+
+	return a.updateCharaCostumes(id, firstName, displayName)
+}
+
+// handleCharaSearch 处理角色搜索请求.
+func (a *App) handleCharaSearch(input string) bool {
+	matchChara, err := a.findChara(input)
+	if err != nil {
+		log.DefaultLogger.Error().Str("input", input).Err(err).Msg("搜索角色失败")
+		a.tuiModel.SetError(fmt.Sprintf("搜索角色失败: %v", err))
+		a.tuiModel.State = StateInput
+		return true
+	}
+	if matchChara == nil {
+		log.DefaultLogger.Warn().Str("input", input).Msg("未找到角色")
+		a.tuiModel.SetError(fmt.Sprintf("未找到角色: %s", input))
+		a.tuiModel.State = StateInput
+		return true
+	}
+
+	// 使用与 main.go 相同的名称逻辑
+	displayName := matchChara.Names[3]
+	if displayName == "" {
+		displayName = matchChara.Names[0]
+	}
+
+	return a.updateCharaCostumes(matchChara.ID, matchChara.Name, displayName)
+}
+
 // handleDirectDownload 处理直接下载请求.
 func (a *App) handleDirectDownload(input string) bool {
 	log.DefaultLogger.Info().Str("input", input).Msg("开始直接下载Live2D")
@@ -205,69 +320,23 @@ func (a *App) handleDirectDownload(input string) bool {
 	return true
 }
 
-// handleCharaSearch 处理角色搜索请求.
-func (a *App) handleCharaSearch(input string) bool {
-	matchChara, err := a.findChara(input)
-	if err != nil {
-		log.DefaultLogger.Error().Str("input", input).Err(err).Msg("搜索角色失败")
-		a.tuiModel.SetError(fmt.Sprintf("搜索角色失败: %v", err))
-		a.tuiModel.State = StateInput // 重置状态到输入模式
-		return true
-	}
-	if matchChara == nil {
-		log.DefaultLogger.Warn().Str("input", input).Msg("未找到角色")
-		a.tuiModel.SetError(fmt.Sprintf("未找到角色: %s", input))
-		a.tuiModel.State = StateInput // 重置状态到输入模式
-		return true
-	}
-
-	// 获取角色服装列表
-	costumes, err := a.apiClient.GetCharaCostumes(a.ctx, matchChara.ID)
-	if err != nil {
-		log.DefaultLogger.Error().Int("charaID", matchChara.ID).Err(err).Msg("获取角色服装列表失败")
-		a.tuiModel.SetError(fmt.Sprintf("获取角色服装列表失败: %v", err))
-		a.tuiModel.State = StateInput // 重置状态到输入模式
-		return true
-	}
-
-	if len(costumes) == 0 {
-		log.DefaultLogger.Warn().Int("charaID", matchChara.ID).Msg("未找到该角色的 Live2D 模型")
-		a.tuiModel.SetError("未找到该角色的 Live2D 模型")
-		a.tuiModel.State = StateInput // 重置状态到输入模式
-		return true
-	}
-
-	// 清除之前的错误消息
-	a.tuiModel.ClearError()
-
-	// 更新列表
-	a.tuiModel.CurrentCharaName = matchChara.Name
-	// 使用与 main.go 相同的名称逻辑
-	displayName := matchChara.Names[3]
-	if displayName == "" {
-		displayName = matchChara.Names[0]
-	}
-	if displayName != matchChara.Name {
-		a.tuiModel.ExtraCharaName = displayName
-	} else {
-		a.tuiModel.ExtraCharaName = ""
-	}
-	log.DefaultLogger.Info().
-		Str("charaName", matchChara.Name).
-		Int("costumesCount", len(costumes)).
-		Msg("找到角色服装列表")
-	a.program.Send(tui.UpdateListMsg{Items: costumes})
-
-	return true
-}
-
 // handleDownload 处理下载请求.
 func (a *App) handleDownload(input string) bool {
-	// 检查是否是 Live2D 名称
-	parts := strings.SplitN(input, "_", SplitPartsCount)
-	if _, err := strconv.Atoi(parts[0]); err == nil {
-		return a.handleDirectDownload(input)
+	// 检查是否为纯数字
+	if _, err := strconv.Atoi(input); err == nil {
+		// 如果是纯数字，直接搜索该编号的角色
+		return a.handleCharaIDSearch(input)
 	}
+
+	// 先尝试作为 Live2D 模型名称处理
+	parts := strings.SplitN(input, "_", SplitPartsCount)
+	if len(parts) >= 2 {
+		if _, err := strconv.Atoi(parts[0]); err == nil {
+			return a.handleDirectDownload(input)
+		}
+	}
+
+	// 如果不是模型名称，则尝试角色搜索
 	return a.handleCharaSearch(input)
 }
 
