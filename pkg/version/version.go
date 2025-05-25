@@ -15,8 +15,9 @@ const (
 
 // GetVersion 返回版本信息.
 func GetVersion() string {
-	// 非 CI 环境直接返回开发版本
-	if os.Getenv("CI") != "true" {
+	// 检查 CI 环境变量是否存在且值不为空
+	ciValue, exists := os.LookupEnv("CI")
+	if !exists || ciValue == "" {
 		return fmt.Sprintf("%s-dev", Version)
 	}
 

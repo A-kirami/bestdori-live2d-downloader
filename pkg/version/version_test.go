@@ -32,7 +32,7 @@ func TestGetVersion(t *testing.T) {
 	}{
 		{
 			name:           "非 CI 环境",
-			ci:             "false",
+			ci:             "",
 			expectedPrefix: version.Version + "-dev",
 		},
 		{
