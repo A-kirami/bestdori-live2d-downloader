@@ -8,7 +8,7 @@
 - 📥 支持直接通过 Live2D 模型名称下载
 - 📁 自动处理模型文件结构
 - ⚡ 支持批量下载多个 Live2D 模型
-- 🎨 提供友好的终端用户界面
+- 🎨 美观易用的终端用户界面
 
 ## 🚀 快速开始
 
@@ -65,7 +65,7 @@
 | `UseCharaCache` | 是否使用角色信息缓存 | `true` |
 | `CharaCachePath` | 角色信息缓存路径 | `./live2d_chara_cache` |
 | `CacheDuration` | 缓存过期时间 | `24h` |
-| `MaxConcurrentDownloads` | 单个模型下载时的最大并发文件下载数 | `5` |
+| `MaxConcurrentDownloads` | 单个模型下载时的最大并发文件下载数 | `20` |
 | `MaxConcurrentModels` | 最大并发模型下载数 | `3` |
 
 ## 📖 使用方法
