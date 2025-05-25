@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/suzuki-shunsuke/go-ci-env/cienv"
 )
 
 const (
@@ -15,9 +17,11 @@ const (
 
 // GetVersion 返回版本信息.
 func GetVersion() string {
-	// 检查 CI 环境变量是否存在且值不为空
-	ciValue, exists := os.LookupEnv("CI")
-	if !exists || ciValue == "" {
+	// 使用 go-ci-env 获取 CI 平台信息
+	platform := cienv.Get()
+
+	// 如果 platform 为 nil 或不是在 CI 环境中运行
+	if platform == nil || !platform.Match() {
 		return fmt.Sprintf("%s-dev", Version)
 	}
 
@@ -27,17 +31,22 @@ func GetVersion() string {
 		return fmt.Sprintf("%s-unknown", Version)
 	}
 
-	// 获取工作流信息
-	workflow := os.Getenv("GITHUB_WORKFLOW")
-	switch workflow {
-	case "Release":
-		return Version
-	case "Build":
-		prNum := os.Getenv("GITHUB_PR_NUMBER")
-		if prNum != "" {
-			return fmt.Sprintf("%s-build.%s (pr#%s)", Version, commit[:7], prNum)
+	// 根据不同的 CI 平台处理版本号
+	switch platform.CI() {
+	case "github-actions":
+		workflow := os.Getenv("GITHUB_WORKFLOW")
+		switch workflow {
+		case "Release":
+			return Version
+		case "Build":
+			if platform.IsPR() {
+				prNum, _ := platform.PRNumber()
+				return fmt.Sprintf("%s-build.%s(pr#%d)", Version, commit[:7], prNum)
+			}
+			return fmt.Sprintf("%s-build.%s", Version, commit[:7])
+		default:
+			return fmt.Sprintf("%s-build.%s", Version, commit[:7])
 		}
-		return fmt.Sprintf("%s-build.%s", Version, commit[:7])
 	default:
 		return fmt.Sprintf("%s-build.%s", Version, commit[:7])
 	}
