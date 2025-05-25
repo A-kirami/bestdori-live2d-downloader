@@ -313,25 +313,37 @@ func (a *App) handleCharaSearch(input string) bool {
 func (a *App) handleDirectDownload(input string) bool {
 	log.DefaultLogger.Info().Str("input", input).Msg("开始直接下载Live2D")
 
-	// 移除可能存在的 _rip 后缀
-	input = strings.TrimSuffix(input, "_rip")
+	// 分割输入字符串，支持空格、中文逗号和英文逗号作为分隔符
+	inputs := strings.FieldsFunc(input, func(r rune) bool {
+		return r == ' ' || r == ',' || r == '，'
+	})
+
+	// 移除每个模型名可能存在的 _rip 后缀
+	modelNames := make([]string, 0, len(inputs))
+	for _, name := range inputs {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		modelNames = append(modelNames, strings.TrimSuffix(name, "_rip"))
+	}
+
+	if len(modelNames) == 0 {
+		log.DefaultLogger.Error().Str("input", input).Msg("没有有效的模型名称")
+		a.tuiModel.SetError("没有有效的模型名称")
+		a.tuiModel.State = StateInput
+		return true
+	}
 
 	// 初始化下载列表
-	a.tuiModel.AddDownloadItem(input, 1) // 初始总数为1，后续会更新
+	for _, name := range modelNames {
+		a.tuiModel.AddDownloadItem(name, 1)
+	}
 	a.tuiModel.State = "downloading"
 	a.tuiModel.DownloadList.Title = "下载进度"
 
-	if downloadErr := a.downloadLive2d(input); downloadErr != nil {
-		if downloadErr.Error() == ErrDownloadCancelled {
-			log.DefaultLogger.Info().Str("input", input).Msg("下载已取消")
-			return false
-		}
-		log.DefaultLogger.Error().Str("input", input).Err(downloadErr).Msg("下载失败")
-		a.tuiModel.SetError(fmt.Sprintf("下载失败: %v", downloadErr))
-		a.tuiModel.State = StateInput // 重置状态到输入模式
-		return true
-	}
-	return true
+	// 使用批量下载功能处理多个模型
+	return a.handleBatchDownload(modelNames)
 }
 
 // handleDownload 处理下载请求.
