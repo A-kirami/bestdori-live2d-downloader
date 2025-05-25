@@ -735,3 +735,13 @@ func (m *Model) GetCancelChan() <-chan struct{} {
 func (m *Model) SetProgram(p *tea.Program) {
 	m.program = p
 }
+
+// SendError 发送错误消息.
+func (m *Model) SendError(itemName string, err error) {
+	if m.program != nil {
+		m.program.Send(progressErrMsg{
+			itemName: itemName,
+			err:      err,
+		})
+	}
+}

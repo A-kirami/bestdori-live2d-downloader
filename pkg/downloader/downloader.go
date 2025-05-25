@@ -442,13 +442,15 @@ func (b *Live2dBuilder) startWorkerPool(ctx context.Context, taskChan chan downl
 // 返回:
 //   - error: 错误信息
 func (b *Live2dBuilder) processDownloadResults(ctx context.Context, tasks []downloadTask, completedFiles int) error {
+	var lastErr error
 	for i := range tasks {
 		select {
 		case <-ctx.Done():
 			return errors.New("下载已取消")
 		case result := <-tasks[i].result:
 			if result.err != nil {
-				return fmt.Errorf("处理文件失败: %w", result.err)
+				lastErr = result.err
+				continue
 			}
 
 			// 更新当前文件的进度
@@ -461,41 +463,27 @@ func (b *Live2dBuilder) processDownloadResults(ctx context.Context, tasks []down
 			updateModelData(b.model, tasks[i].filePath, result.relPath)
 		}
 	}
+	if lastErr != nil {
+		return fmt.Errorf("处理文件失败: %w", lastErr)
+	}
 	return nil
 }
 
-// Construct 构建完整的 Live2D 模型.
-func (b *Live2dBuilder) Construct() error {
-	// 支持TuiModel为nil，测试时直接用context.Background()
-	var ctx context.Context
+// setupDownloadEnvironment 设置下载环境
+// 包括上下文设置、信号量获取、目录创建等初始化工作.
+func (b *Live2dBuilder) setupDownloadEnvironment() (context.Context, error) {
+	// 设置上下文
+	ctx := context.Background()
 	if b.downloader.TuiModel != nil && b.downloader.TuiModel.Ctx != nil {
 		ctx = b.downloader.TuiModel.Ctx
-	} else {
-		ctx = context.Background()
 	}
 
-	log.DefaultLogger.Info().Str("modelName", b.ModelName).Msg("开始构建Live2D模型")
-
-	// 获取信号量，限制同时下载的模型数量
+	// 获取信号量
 	select {
 	case <-ctx.Done():
 		log.DefaultLogger.Info().Str("modelName", b.ModelName).Msg("构建已取消")
-		return errors.New("下载已取消")
+		return nil, errors.New("下载已取消")
 	case b.downloader.modelSem <- struct{}{}:
-		defer func() { <-b.downloader.modelSem }() // 完成后释放信号量
-	}
-
-	totalFiles := 1 + // model.moc
-		1 + // physics.json
-		len(b.data.Textures) + // textures
-		len(b.data.Motions) + // motions
-		len(b.data.Expressions) // expressions
-
-	log.DefaultLogger.Info().Str("modelName", b.ModelName).Int("totalFiles", totalFiles).Msg("需要下载的文件总数")
-
-	// 添加下载项
-	if b.downloader.TuiModel != nil {
-		b.downloader.TuiModel.AddDownloadItem(b.ModelName, totalFiles)
 	}
 
 	// 确保目录存在
@@ -504,8 +492,74 @@ func (b *Live2dBuilder) Construct() error {
 		if b.downloader.TuiModel != nil {
 			b.downloader.TuiModel.SetError(fmt.Sprintf("%s: 创建目录失败: %v", b.ModelName, err))
 		}
-		return fmt.Errorf("创建目录失败: %w", err)
+		<-b.downloader.modelSem // 释放信号量
+		return nil, fmt.Errorf("创建目录失败: %w", err)
 	}
+
+	return ctx, nil
+}
+
+// initializeDownloadProgress 初始化下载进度.
+func (b *Live2dBuilder) initializeDownloadProgress() {
+	totalFiles := 1 + // model.moc
+		1 + // physics.json
+		len(b.data.Textures) + // textures
+		len(b.data.Motions) + // motions
+		len(b.data.Expressions) // expressions
+
+	log.DefaultLogger.Info().Str("modelName", b.ModelName).Int("totalFiles", totalFiles).Msg("需要下载的文件总数")
+
+	if b.downloader.TuiModel != nil {
+		b.downloader.TuiModel.AddDownloadItem(b.ModelName, totalFiles)
+	}
+}
+
+// handleDownloadTasks 处理下载任务.
+func (b *Live2dBuilder) handleDownloadTasks(ctx context.Context, tasks []downloadTask, completedFiles int) error {
+	if len(tasks) == 0 {
+		return nil
+	}
+
+	taskChan := make(chan downloadTask, len(tasks))
+	errorChan := make(chan error, 1)
+
+	// 启动工作池
+	b.startWorkerPool(ctx, taskChan, errorChan)
+
+	// 发送所有任务
+	for _, task := range tasks {
+		select {
+		case <-ctx.Done():
+			return errors.New("下载已取消")
+		case taskChan <- task:
+		}
+	}
+	close(taskChan)
+
+	// 处理下载结果
+	if err := b.processDownloadResults(ctx, tasks, completedFiles); err != nil {
+		if b.downloader.TuiModel != nil {
+			b.downloader.TuiModel.SendError(b.ModelName, err)
+		}
+		return err
+	}
+
+	return nil
+}
+
+// Construct 构建完整的 Live2D 模型.
+func (b *Live2dBuilder) Construct() error {
+	log.DefaultLogger.Info().Str("modelName", b.ModelName).Msg("开始构建Live2D模型")
+
+	// 设置下载环境
+	ctx, err := b.setupDownloadEnvironment()
+	if err != nil {
+		return err
+	}
+	defer func() { <-b.downloader.modelSem }() // 完成后释放信号量
+
+	// 初始化下载进度
+	b.initializeDownloadProgress()
 
 	// 准备下载任务
 	tasks, existingFiles := b.prepareDownloadTasks()
@@ -513,31 +567,15 @@ func (b *Live2dBuilder) Construct() error {
 	// 处理已存在的文件
 	completedFiles, err := b.processExistingFiles(existingFiles)
 	if err != nil {
+		if b.downloader.TuiModel != nil {
+			b.downloader.TuiModel.SendError(b.ModelName, err)
+		}
 		return err
 	}
 
-	// 如果有需要下载的文件，启动工作池
-	if len(tasks) > 0 {
-		taskChan := make(chan downloadTask, len(tasks))
-		errorChan := make(chan error, 1)
-
-		// 启动工作池
-		b.startWorkerPool(ctx, taskChan, errorChan)
-
-		// 发送所有任务
-		for _, task := range tasks {
-			select {
-			case <-ctx.Done():
-				return errors.New("下载已取消")
-			case taskChan <- task:
-			}
-		}
-		close(taskChan)
-
-		// 处理下载结果
-		if err = b.processDownloadResults(ctx, tasks, completedFiles); err != nil {
-			return err
-		}
+	// 处理下载任务
+	if err = b.handleDownloadTasks(ctx, tasks, completedFiles); err != nil {
+		return err
 	}
 
 	// 创建最终的模型数据
