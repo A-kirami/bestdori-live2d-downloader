@@ -261,18 +261,15 @@ func (c *Client) GetLive2dData(ctx context.Context, live2dName string) (*model.B
 		return nil, fmt.Errorf("反序列化构建数据失败: %w", unmarshalErr)
 	}
 
-	// 处理所有文件名
-	buildData.Model.ProcessFileName()
-	buildData.Physics.ProcessFileName()
-	for i := range buildData.Textures {
-		buildData.Textures[i].ProcessFileName()
-	}
-	buildData.Transition.ProcessFileName()
+	// 处理 model 和 motions 文件的 .bytes 后缀
+	buildData.Model.RemoveBytesSuffix()
 	for i := range buildData.Motions {
-		buildData.Motions[i].ProcessFileName()
+		buildData.Motions[i].RemoveBytesSuffix()
 	}
-	for i := range buildData.Expressions {
-		buildData.Expressions[i].ProcessFileName()
+
+	// 确保纹理文件名有 .png 后缀
+	for i := range buildData.Textures {
+		buildData.Textures[i].EnsurePngSuffix()
 	}
 
 	log.DefaultLogger.Info().Str("live2dName", live2dName).Msg("Live2D构建数据处理完成")

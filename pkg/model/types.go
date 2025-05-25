@@ -11,10 +11,19 @@ type BundleFile struct {
 	FileName   string `json:"fileName"`   // 文件名
 }
 
-// ProcessFileName 处理文件名，移除 .bytes 后缀
-// 用于清理从 Bestdori 下载的文件名.
-func (b *BundleFile) ProcessFileName() {
+// RemoveBytesSuffix 移除 .bytes 后缀
+// 用于处理 model 和 motions 文件的文件名.
+func (b *BundleFile) RemoveBytesSuffix() {
 	b.FileName = strings.TrimSuffix(b.FileName, ".bytes")
+}
+
+// EnsurePngSuffix 确保文件名有 .png 后缀
+// 用于处理纹理文件的文件名.
+func (b *BundleFile) EnsurePngSuffix() {
+	// 检查文件名是否有后缀，如果没有则添加 .png
+	if !strings.Contains(b.FileName, ".") {
+		b.FileName += ".png"
+	}
 }
 
 // BuildData 表示 Live2D 模型的构建数据
