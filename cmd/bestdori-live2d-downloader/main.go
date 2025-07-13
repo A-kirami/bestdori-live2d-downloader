@@ -241,39 +241,34 @@ func (a *App) handleCharaIDSearch(charaID string) bool {
 		return true
 	}
 
-	// 获取角色信息
+	firstName, displayName := a.getCharaNames(id)
+	return a.updateCharaCostumes(id, firstName, displayName)
+}
+
+// getCharaNames 获取角色名称，如果获取失败则使用默认名称.
+func (a *App) getCharaNames(id int) (string, string) {
 	chara, err := a.apiClient.GetChara(a.ctx, id)
 	if err != nil {
-		log.DefaultLogger.Error().Int("charaID", id).Err(err).Msg("获取角色信息失败")
-		a.tuiModel.SetError(fmt.Sprintf("获取角色信息失败: %v", err))
-		a.tuiModel.State = StateInput
-		return true
+		// 如果获取角色信息失败，记录警告但继续尝试获取模型
+		log.DefaultLogger.Warn().Int("charaID", id).Err(err).Msg("获取角色信息失败，尝试获取模型信息")
+		defaultName := fmt.Sprintf("角色%d", id)
+		return defaultName, defaultName
 	}
 
 	// 检查角色信息格式
 	characterNames, ok := chara["characterName"].([]any)
-	if !ok {
+	if !ok || len(characterNames) < 4 {
 		log.DefaultLogger.Error().Int("charaID", id).Msg("无效的角色名字格式")
-		a.tuiModel.SetError("无效的角色名字格式")
-		a.tuiModel.State = StateInput
-		return true
-	}
-
-	// 确保数组长度足够
-	if len(characterNames) < 4 {
-		log.DefaultLogger.Error().Int("charaID", id).Msg("角色名字数组长度不足")
-		a.tuiModel.SetError("无效的角色名字格式")
-		a.tuiModel.State = StateInput
-		return true
+		defaultName := fmt.Sprintf("角色%d", id)
+		return defaultName, defaultName
 	}
 
 	// 检查每个元素是否为字符串
 	firstName, ok := characterNames[0].(string)
 	if !ok {
 		log.DefaultLogger.Error().Int("charaID", id).Msg("角色名字格式错误")
-		a.tuiModel.SetError("无效的角色名字格式")
-		a.tuiModel.State = StateInput
-		return true
+		defaultName := fmt.Sprintf("角色%d", id)
+		return defaultName, defaultName
 	}
 
 	displayName, ok := characterNames[3].(string)
@@ -281,7 +276,7 @@ func (a *App) handleCharaIDSearch(charaID string) bool {
 		displayName = firstName
 	}
 
-	return a.updateCharaCostumes(id, firstName, displayName)
+	return firstName, displayName
 }
 
 // handleCharaSearch 处理角色搜索请求.
