@@ -33,6 +33,23 @@ const (
 	ErrDownloadCancelled = "下载已取消"
 )
 
+// SuggestionError 表示建议类型的错误.
+type SuggestionError struct {
+	Message   string
+	BestMatch string
+}
+
+func (e *SuggestionError) Error() string {
+	return e.Message
+}
+
+// IsSuggestionError 检查错误是否为建议类型.
+func IsSuggestionError(err error) bool {
+	suggestionError := &SuggestionError{}
+	ok := errors.As(err, &suggestionError)
+	return ok
+}
+
 // App 表示应用程序的主要结构.
 type App struct {
 	ctx       context.Context
@@ -176,9 +193,20 @@ func (a *App) findChara(name string) (*model.MatchChara, error) {
 	}
 
 	bestID, bestMatch, maxSimilarity := utils.FindBestMatch(name, candidates)
-	if maxSimilarity == 0 {
-		log.DefaultLogger.Warn().Str("name", name).Msg("未找到匹配的角色")
-		return nil, errors.New("未找到匹配的角色")
+	// 设置相似度阈值，用于判断是否为高置信度匹配
+	const similarityThreshold = 0.6
+
+	if maxSimilarity < similarityThreshold {
+		log.DefaultLogger.Warn().
+			Str("name", name).
+			Str("bestMatch", bestMatch).
+			Float64("similarity", maxSimilarity).
+			Float64("threshold", similarityThreshold).
+			Msg("未找到足够相似的角色，但提供最佳建议")
+		return nil, &SuggestionError{
+			Message:   fmt.Sprintf("未找到符合此名称的角色，你要找的是「%s」吗？", bestMatch),
+			BestMatch: bestMatch,
+		}
 	}
 
 	id, _ := strconv.Atoi(bestID)
@@ -186,6 +214,7 @@ func (a *App) findChara(name string) (*model.MatchChara, error) {
 		Str("name", name).
 		Str("bestMatch", bestMatch).
 		Float64("similarity", maxSimilarity).
+		Float64("threshold", similarityThreshold).
 		Msg("找到匹配的角色")
 	return &model.MatchChara{
 		ID:    id,
@@ -283,6 +312,14 @@ func (a *App) getCharaNames(id int) (string, string) {
 func (a *App) handleCharaSearch(input string) bool {
 	matchChara, err := a.findChara(input)
 	if err != nil {
+		// 检查是否为建议错误（相似度不够高的情况）
+		if IsSuggestionError(err) {
+			log.DefaultLogger.Warn().Str("input", input).Err(err).Msg("提供角色建议")
+			a.tuiModel.SetError(err.Error())
+			a.tuiModel.State = StateInput
+			return true
+		}
+
 		log.DefaultLogger.Error().Str("input", input).Err(err).Msg("搜索角色失败")
 		a.tuiModel.SetError(fmt.Sprintf("搜索角色失败: %v", err))
 		a.tuiModel.State = StateInput
