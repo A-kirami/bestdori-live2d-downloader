@@ -15,9 +15,9 @@ import (
 	"github.com/A-kirami/bestdori-live2d-downloader/pkg/config"
 	"github.com/A-kirami/bestdori-live2d-downloader/pkg/downloader"
 	"github.com/A-kirami/bestdori-live2d-downloader/pkg/log"
+	"github.com/A-kirami/bestdori-live2d-downloader/pkg/matcher"
 	"github.com/A-kirami/bestdori-live2d-downloader/pkg/model"
 	"github.com/A-kirami/bestdori-live2d-downloader/pkg/tui"
-	"github.com/A-kirami/bestdori-live2d-downloader/pkg/utils"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -192,7 +192,7 @@ func (a *App) findChara(name string) (*model.MatchChara, error) {
 		candidates[charaID] = names
 	}
 
-	bestID, bestMatch, maxSimilarity := utils.FindBestMatch(name, candidates)
+	bestID, bestMatch, maxSimilarity := matcher.FindBestMatch(name, candidates)
 	// 设置相似度阈值，用于判断是否为高置信度匹配
 	const similarityThreshold = 0.6
 

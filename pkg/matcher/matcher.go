@@ -1,6 +1,6 @@
-// Package utils 提供了各种工具函数
-// 包括字符串处理、角色搜索等功能
-package utils
+// Package matcher 提供了字符串匹配和相似度计算功能
+// 包括角色名称搜索、字符串相似度计算等
+package matcher
 
 import (
 	"strconv"

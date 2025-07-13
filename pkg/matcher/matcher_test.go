@@ -1,9 +1,9 @@
-package utils_test
+package matcher_test
 
 import (
 	"testing"
 
-	"github.com/A-kirami/bestdori-live2d-downloader/pkg/utils"
+	"github.com/A-kirami/bestdori-live2d-downloader/pkg/matcher"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -55,7 +55,7 @@ func TestFindBestMatch(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotID, gotName, _ := utils.FindBestMatch(tt.query, tt.candidates)
+			gotID, gotName, _ := matcher.FindBestMatch(tt.query, tt.candidates)
 			assert.Equal(t, tt.wantID, gotID, "ID should match")
 			assert.Equal(t, tt.wantName, gotName, "Name should match")
 		})
