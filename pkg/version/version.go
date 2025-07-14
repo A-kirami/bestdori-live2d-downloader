@@ -12,7 +12,7 @@ import (
 
 const (
 	// Version 是应用程序的版本号.
-	Version = "v1.2.0"
+	Version = "v1.3.0"
 )
 
 // GetVersion 返回版本信息.
