@@ -419,7 +419,12 @@ func (a *App) handleDownload(input string) bool {
 }
 
 // downloadModel 下载单个模型.
-func (a *App) downloadModel(costume string, errChan chan error, completed map[string]bool) {
+func (a *App) downloadModel(
+	costume string,
+	errChan chan error,
+	completed map[string]bool,
+	progressUpdated chan struct{},
+) {
 	if err := a.downloadLive2d(costume); err != nil {
 		if err.Error() == ErrDownloadCancelled {
 			errChan <- err
@@ -428,6 +433,13 @@ func (a *App) downloadModel(costume string, errChan chan error, completed map[st
 		log.DefaultLogger.Error().Str("model", costume).Err(err).Msg("下载失败")
 	} else {
 		completed[costume] = true
+	}
+	// 无论成功还是失败，都更新总体进度
+	a.tuiModel.UpdateTotalProgress()
+	// 通知进度已更新
+	select {
+	case progressUpdated <- struct{}{}:
+	default:
 	}
 }
 
@@ -439,9 +451,13 @@ func (a *App) handleBatchDownload(selectedItems []string) bool {
 
 	log.DefaultLogger.Info().Int("selectedCount", len(selectedItems)).Msg("开始批量下载Live2D")
 
+	// 设置总体进度
+	a.tuiModel.SetTotalModels(len(selectedItems))
+
 	errChan := make(chan error, 1)
 	completed := make(map[string]bool)
 	modelSem := make(chan struct{}, config.Get().MaxConcurrentModels)
+	progressUpdated := make(chan struct{}, 1) // 用于通知进度已更新
 
 	for _, costume := range selectedItems {
 		select {
@@ -459,7 +475,7 @@ func (a *App) handleBatchDownload(selectedItems []string) bool {
 			modelSem <- struct{}{}
 			go func(costume string) {
 				defer func() { <-modelSem }()
-				a.downloadModel(costume, errChan, completed)
+				a.downloadModel(costume, errChan, completed, progressUpdated)
 			}(costume)
 		}
 	}
@@ -476,6 +492,7 @@ func (a *App) handleCancelledDownloads(selectedItems []string, completed map[str
 	for _, item := range selectedItems {
 		if !completed[item] {
 			log.DefaultLogger.Error().Str("model", item).Msg("下载已取消")
+			// 注意：总体进度已经在downloadModel中更新，这里不需要重复更新
 		}
 	}
 }

@@ -137,6 +137,8 @@ type Model struct {
 	Ctx              context.Context          // 上下文，用于控制操作的生命周期
 	Cancel           context.CancelFunc       // 取消函数，用于取消上下文
 	ErrorMessage     string                   // 错误消息
+	TotalModels      int                      // 总模型数量
+	CompletedModels  int                      // 已完成的模型数量
 }
 
 // DownloadDelegate 用于下载进度列表的代理
@@ -206,18 +208,20 @@ func NewModel() Model {
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF69B4"))
 
 	return Model{
-		Items:        make(map[string]*DownloadItem),
-		ItemOrder:    []string{},
-		TextInput:    ti,
-		Live2dList:   l,
-		DownloadList: downloadList,
-		State:        StateInput,
-		SearchChan:   make(chan string, 1),
-		SelectChan:   make(chan []string, 1),
-		Spinner:      s,
-		cancelChan:   make(chan struct{}), // 初始化取消通道
-		Ctx:          ctx,
-		Cancel:       cancel,
+		Items:           make(map[string]*DownloadItem),
+		ItemOrder:       []string{},
+		TextInput:       ti,
+		Live2dList:      l,
+		DownloadList:    downloadList,
+		State:           StateInput,
+		SearchChan:      make(chan string, 1),
+		SelectChan:      make(chan []string, 1),
+		Spinner:         s,
+		cancelChan:      make(chan struct{}), // 初始化取消通道
+		Ctx:             ctx,
+		Cancel:          cancel,
+		TotalModels:     0,
+		CompletedModels: 0,
 	}
 }
 
@@ -352,15 +356,9 @@ func (m *Model) handleListEnter() (tea.Model, tea.Cmd) {
 			m.AddDownloadItem(name, 1)
 		}
 		m.State = StateDownloading
-		if m.CurrentCharaName != "" {
-			title := fmt.Sprintf("下载进度 - %s", m.CurrentCharaName)
-			if m.ExtraCharaName != "" {
-				title = fmt.Sprintf("%s (%s)", title, m.ExtraCharaName)
-			}
-			m.DownloadList.Title = title
-		} else {
-			m.DownloadList.Title = "下载进度"
-		}
+		// 设置总体进度并立即更新标题
+		m.SetTotalModels(len(selected))
+		m.UpdateDownloadListTitle()
 		select {
 		case m.SelectChan <- selected:
 		default:
@@ -738,5 +736,48 @@ func (m *Model) SendError(itemName string, err error) {
 			itemName: itemName,
 			err:      err,
 		})
+	}
+}
+
+// SetTotalModels 设置总模型数量.
+func (m *Model) SetTotalModels(total int) {
+	m.TotalModels = total
+	m.CompletedModels = 0
+}
+
+// UpdateTotalProgress 更新总体进度.
+func (m *Model) UpdateTotalProgress() {
+	m.CompletedModels++
+	// 更新下载列表标题以显示最新的总体进度
+	m.UpdateDownloadListTitle()
+}
+
+// GetTotalProgress 获取总体进度字符串.
+func (m *Model) GetTotalProgress() string {
+	if m.TotalModels == 0 {
+		return ""
+	}
+	return fmt.Sprintf("总进度: %d/%d", m.CompletedModels, m.TotalModels)
+}
+
+// UpdateDownloadListTitle 更新下载列表标题，包含总体进度.
+func (m *Model) UpdateDownloadListTitle() {
+	if m.CurrentCharaName != "" {
+		title := fmt.Sprintf("下载列表 - %s", m.CurrentCharaName)
+		if m.ExtraCharaName != "" {
+			title = fmt.Sprintf("%s (%s)", title, m.ExtraCharaName)
+		}
+		// 添加总体进度到标题
+		if progressStr := m.GetTotalProgress(); progressStr != "" {
+			title = fmt.Sprintf("%s - %s", title, progressStr)
+		}
+		m.DownloadList.Title = title
+	} else {
+		title := "下载列表"
+		// 添加总体进度到标题
+		if progressStr := m.GetTotalProgress(); progressStr != "" {
+			title = fmt.Sprintf("%s - %s", title, progressStr)
+		}
+		m.DownloadList.Title = title
 	}
 }
