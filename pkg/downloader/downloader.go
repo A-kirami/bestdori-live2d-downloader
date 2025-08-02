@@ -76,6 +76,100 @@ func NewDownloader(apiClient *api.Client, tuiModel *tui.Model, program *tea.Prog
 	}
 }
 
+// createDownloadRequest 创建下载请求
+// 参数:
+//   - ctx: 上下文
+//   - bundleFile: 资源包文件信息
+//
+// 返回:
+//   - *http.Request: HTTP请求
+//   - error: 错误信息
+func (d *Downloader) createDownloadRequest(ctx context.Context, bundleFile model.BundleFile) (*http.Request, error) {
+	url := fmt.Sprintf("%s/%s_rip/%s", config.Get().BaseAssetsURL, bundleFile.BundleName, bundleFile.FileName)
+	log.DefaultLogger.Info().Str("url", url).Msg("开始下载文件")
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		log.DefaultLogger.Error().Str("url", url).Err(err).Msg("创建请求失败")
+		return nil, fmt.Errorf("创建请求失败: %w", err)
+	}
+
+	return req, nil
+}
+
+// validateResponse 验证HTTP响应
+// 参数:
+//   - resp: HTTP响应
+//   - url: 请求URL
+//   - allowNotFound: 是否允许文件不存在
+//
+// 返回:
+//   - error: 错误信息
+func (d *Downloader) validateResponse(resp *http.Response, url string, allowNotFound bool) error {
+	if resp.StatusCode != http.StatusOK {
+		// 如果允许文件不存在，404错误被视为正常情况
+		if allowNotFound && resp.StatusCode == http.StatusNotFound {
+			log.DefaultLogger.Info().Str("url", url).Msg("文件不存在，跳过下载")
+			return nil
+		}
+		log.DefaultLogger.Error().Str("url", url).Int("statusCode", resp.StatusCode).Msg("下载文件HTTP错误")
+		return fmt.Errorf("下载文件HTTP错误: %d", resp.StatusCode)
+	}
+
+	// 检查Content-Type是否为HTML，如果是则说明是错误页面
+	contentType := resp.Header.Get("Content-Type")
+	if strings.HasPrefix(contentType, "text/html") {
+		log.DefaultLogger.Error().Str("url", url).Str("contentType", contentType).Msg("文件不存在或无法访问")
+		return errors.New("文件不存在或无法访问")
+	}
+
+	return nil
+}
+
+// createFileAndDirectory 创建文件和目录
+// 参数:
+//   - filePath: 文件路径
+//
+// 返回:
+//   - *os.File: 文件句柄
+//   - error: 错误信息
+func (d *Downloader) createFileAndDirectory(filePath string) (*os.File, error) {
+	if mkdirErr := os.MkdirAll(filepath.Dir(filePath), 0750); mkdirErr != nil {
+		log.DefaultLogger.Error().Str("filePath", filePath).Err(mkdirErr).Msg("创建目录失败")
+		return nil, fmt.Errorf("创建目录失败: %w", mkdirErr)
+	}
+
+	file, err := os.Create(filePath)
+	if err != nil {
+		log.DefaultLogger.Error().Str("filePath", filePath).Err(err).Msg("创建文件失败")
+		return nil, fmt.Errorf("创建文件失败: %w", err)
+	}
+
+	return file, nil
+}
+
+// writeFileContent 写入文件内容
+// 参数:
+//   - file: 文件句柄
+//   - resp: HTTP响应
+//   - filePath: 文件路径
+//
+// 返回:
+//   - error: 错误信息
+func (d *Downloader) writeFileContent(file *os.File, resp *http.Response, filePath string) error {
+	_, err := io.Copy(file, resp.Body)
+	if err != nil {
+		// 判断是否为 context 超时或取消
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			log.DefaultLogger.Error().Str("filePath", filePath).Err(err).Msg("下载超时或被取消")
+			return fmt.Errorf("下载超时或被取消: %w", err)
+		}
+		log.DefaultLogger.Error().Str("filePath", filePath).Err(err).Msg("写入文件失败")
+		return fmt.Errorf("写入文件失败: %w", err)
+	}
+	return nil
+}
+
 // DownloadBundleFile 下载资源包文件
 // 参数:
 //   - ctx: 上下文
@@ -96,64 +190,46 @@ func (d *Downloader) DownloadBundleFile(
 		log.DefaultLogger.Info().Str("filePath", filePath).Msg("下载已取消")
 		return errors.New("下载已取消")
 	default:
-		url := fmt.Sprintf("%s/%s_rip/%s", config.Get().BaseAssetsURL, bundleFile.BundleName, bundleFile.FileName)
-		log.DefaultLogger.Info().Str("url", url).Str("filePath", filePath).Msg("开始下载文件")
+	}
 
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-		if err != nil {
-			log.DefaultLogger.Error().Str("url", url).Err(err).Msg("创建请求失败")
-			return fmt.Errorf("创建请求失败: %w", err)
-		}
+	// 创建请求
+	req, err := d.createDownloadRequest(ctx, bundleFile)
+	if err != nil {
+		return err
+	}
 
-		resp, err := d.httpClient.Do(req)
-		if err != nil {
-			log.DefaultLogger.Error().Str("url", url).Err(err).Msg("下载文件失败")
-			return fmt.Errorf("下载文件失败: %w", err)
-		}
-		defer resp.Body.Close()
+	// 执行请求
+	resp, err := d.httpClient.Do(req)
+	if err != nil {
+		log.DefaultLogger.Error().Str("url", req.URL.String()).Err(err).Msg("下载文件失败")
+		return fmt.Errorf("下载文件失败: %w", err)
+	}
+	defer resp.Body.Close()
 
-		if resp.StatusCode != http.StatusOK {
-			// 如果允许文件不存在，404错误被视为正常情况
-			if allowNotFound && resp.StatusCode == http.StatusNotFound {
-				log.DefaultLogger.Info().Str("url", url).Str("filePath", filePath).Msg("文件不存在，跳过下载")
-				return nil
-			}
-			log.DefaultLogger.Error().Str("url", url).Int("statusCode", resp.StatusCode).Msg("下载文件HTTP错误")
-			return fmt.Errorf("下载文件HTTP错误: %d", resp.StatusCode)
-		}
+	// 验证响应
+	if validateErr := d.validateResponse(resp, req.URL.String(), allowNotFound); validateErr != nil {
+		return validateErr
+	}
 
-		// 检查Content-Type是否为HTML，如果是则说明是错误页面
-		contentType := resp.Header.Get("Content-Type")
-		if strings.HasPrefix(contentType, "text/html") {
-			log.DefaultLogger.Error().Str("url", url).Str("contentType", contentType).Msg("文件不存在或无法访问")
-			return errors.New("文件不存在或无法访问")
-		}
-
-		if mkdirErr := os.MkdirAll(filepath.Dir(filePath), 0750); mkdirErr != nil {
-			log.DefaultLogger.Error().Str("filePath", filePath).Err(mkdirErr).Msg("创建目录失败")
-			return fmt.Errorf("创建目录失败: %w", mkdirErr)
-		}
-
-		file, err := os.Create(filePath)
-		if err != nil {
-			log.DefaultLogger.Error().Str("filePath", filePath).Err(err).Msg("创建文件失败")
-			return fmt.Errorf("创建文件失败: %w", err)
-		}
-		defer file.Close()
-
-		_, err = io.Copy(file, resp.Body)
-		if err != nil {
-			// 判断是否为 context 超时或取消
-			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-				log.DefaultLogger.Error().Str("filePath", filePath).Err(err).Msg("下载超时或被取消")
-				return fmt.Errorf("下载超时或被取消: %w", err)
-			}
-			log.DefaultLogger.Error().Str("filePath", filePath).Err(err).Msg("写入文件失败")
-			return fmt.Errorf("写入文件失败: %w", err)
-		}
-		log.DefaultLogger.Info().Str("filePath", filePath).Msg("文件下载完成")
+	// 如果允许文件不存在且文件不存在，直接返回
+	if allowNotFound && resp.StatusCode == http.StatusNotFound {
 		return nil
 	}
+
+	// 创建文件和目录
+	file, createErr := d.createFileAndDirectory(filePath)
+	if createErr != nil {
+		return createErr
+	}
+	defer file.Close()
+
+	// 写入文件内容
+	if writeErr := d.writeFileContent(file, resp, filePath); writeErr != nil {
+		return writeErr
+	}
+
+	log.DefaultLogger.Info().Str("filePath", filePath).Msg("文件下载完成")
+	return nil
 }
 
 // Live2dBuilder 表示 Live2D 构建器
