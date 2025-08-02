@@ -164,6 +164,27 @@ func (c *Client) GetChara(ctx context.Context, charaID int) (map[string]any, err
 	return c.FetchData(ctx, url, fmt.Sprintf("chara_%d.json", charaID))
 }
 
+// getLive2dAssets 获取 Live2D 资源映射
+// 参数:
+//   - ctx: 上下文
+//
+// 返回:
+//   - map[string]any: Live2D 资源映射
+//   - error: 错误信息
+func (c *Client) getLive2dAssets(ctx context.Context) (map[string]any, error) {
+	assetsInfo, err := c.FetchData(ctx, c.assetsIndexURL, "assets_info.json")
+	if err != nil {
+		return nil, err
+	}
+
+	live2dAssets, ok := assetsInfo["live2d"].(map[string]any)["chara"].(map[string]any)
+	if !ok {
+		return nil, errors.New("无效的资源索引格式")
+	}
+
+	return live2dAssets, nil
+}
+
 // GetCharaCostumes 获取指定角色的所有 Live2D 服装列表
 // 参数:
 //   - ctx: 上下文
@@ -173,14 +194,9 @@ func (c *Client) GetChara(ctx context.Context, charaID int) (map[string]any, err
 //   - []string: 服装列表（按特定规则排序）
 //   - error: 错误信息
 func (c *Client) GetCharaCostumes(ctx context.Context, charaID int) ([]string, error) {
-	assetsInfo, err := c.FetchData(ctx, c.assetsIndexURL, "assets_info.json")
+	live2dAssets, err := c.getLive2dAssets(ctx)
 	if err != nil {
 		return nil, err
-	}
-
-	live2dAssets, ok := assetsInfo["live2d"].(map[string]any)["chara"].(map[string]any)
-	if !ok {
-		return nil, errors.New("无效的资源索引格式")
 	}
 
 	var costumes []string
@@ -274,6 +290,25 @@ func (c *Client) GetLive2dData(ctx context.Context, live2dName string) (*model.B
 
 	log.DefaultLogger.Info().Str("live2dName", live2dName).Msg("Live2D构建数据处理完成")
 	return &buildData, nil
+}
+
+// ValidateLive2dModel 验证指定的 Live2D 模型是否存在
+// 参数:
+//   - ctx: 上下文
+//   - live2dName: Live2D 模型名称
+//
+// 返回:
+//   - bool: 模型是否存在
+//   - error: 错误信息
+func (c *Client) ValidateLive2dModel(ctx context.Context, live2dName string) (bool, error) {
+	live2dAssets, err := c.getLive2dAssets(ctx)
+	if err != nil {
+		return false, fmt.Errorf("获取资源索引失败: %w", err)
+	}
+
+	// 检查模型名是否存在于live2dAssets中
+	_, exists := live2dAssets[live2dName]
+	return exists, nil
 }
 
 // SetCharaCachePath 设置角色信息缓存路径

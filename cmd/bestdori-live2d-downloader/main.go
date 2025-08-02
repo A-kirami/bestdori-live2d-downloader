@@ -367,6 +367,30 @@ func (a *App) handleDirectDownload(input string) bool {
 		return true
 	}
 
+	// 验证所有模型是否存在
+	var invalidModels []string
+	for _, name := range modelNames {
+		exists, err := a.apiClient.ValidateLive2dModel(a.ctx, name)
+		if err != nil {
+			log.DefaultLogger.Error().Str("model", name).Err(err).Msg("验证模型失败")
+			a.tuiModel.SetError(fmt.Sprintf("验证模型失败: %v", err))
+			a.tuiModel.State = StateInput
+			return true
+		}
+		if !exists {
+			invalidModels = append(invalidModels, name)
+		}
+	}
+
+	// 如果有无效的模型，显示错误信息
+	if len(invalidModels) > 0 {
+		errorMsg := fmt.Sprintf("以下模型不存在: %s", strings.Join(invalidModels, ", "))
+		log.DefaultLogger.Error().Strs("invalidModels", invalidModels).Msg("发现无效的模型名称")
+		a.tuiModel.SetError(errorMsg)
+		a.tuiModel.State = StateInput
+		return true
+	}
+
 	// 初始化下载列表
 	for _, name := range modelNames {
 		a.tuiModel.AddDownloadItem(name, 1)

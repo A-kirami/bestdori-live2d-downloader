@@ -174,3 +174,52 @@ func TestGetChara(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateLive2dModel(t *testing.T) {
+	// 创建临时目录用于测试缓存
+	tempDir := t.TempDir()
+
+	client := api.NewClient()
+	client.SetCharaCachePath(tempDir)
+	client.SetUseCharaCache(true)
+
+	tests := []struct {
+		name       string
+		live2dName string
+		wantExists bool
+		wantErr    bool
+	}{
+		{
+			name:       "有效的模型名称",
+			live2dName: "037_casual-2023",
+			wantExists: true,
+			wantErr:    false,
+		},
+		{
+			name:       "无效的模型名称",
+			live2dName: "000_invalid_model",
+			wantExists: false,
+			wantErr:    false,
+		},
+		{
+			name:       "空模型名称",
+			live2dName: "",
+			wantExists: false,
+			wantErr:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			exists, err := client.ValidateLive2dModel(ctx, tt.live2dName)
+
+			if tt.wantErr {
+				require.Error(t, err, "ValidateLive2dModel() should return error")
+			} else {
+				require.NoError(t, err, "ValidateLive2dModel() should not return error")
+			}
+			require.Equal(t, tt.wantExists, exists, "ValidateLive2dModel() should return correct existence status")
+		})
+	}
+}
