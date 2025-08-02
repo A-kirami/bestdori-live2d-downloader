@@ -31,9 +31,10 @@ type ExpressionFile = model.ExpressionFile
 
 // downloadTask 表示下载任务.
 type downloadTask struct {
-	bundleFile model.BundleFile    // 要下载的资源包文件信息
-	filePath   string              // 保存路径
-	result     chan downloadResult // 结果通道
+	bundleFile    model.BundleFile    // 要下载的资源包文件信息
+	filePath      string              // 保存路径
+	allowNotFound bool                // 是否允许文件不存在
+	result        chan downloadResult // 结果通道
 }
 
 // downloadResult 表示下载结果.
@@ -80,10 +81,16 @@ func NewDownloader(apiClient *api.Client, tuiModel *tui.Model, program *tea.Prog
 //   - ctx: 上下文
 //   - bundleFile: 资源包文件信息
 //   - filePath: 保存路径
+//   - allowNotFound: 是否允许文件不存在（404错误时视为正常情况）
 //
 // 返回:
 //   - error: 错误信息
-func (d *Downloader) DownloadBundleFile(ctx context.Context, bundleFile model.BundleFile, filePath string) error {
+func (d *Downloader) DownloadBundleFile(
+	ctx context.Context,
+	bundleFile model.BundleFile,
+	filePath string,
+	allowNotFound bool,
+) error {
 	select {
 	case <-ctx.Done():
 		log.DefaultLogger.Info().Str("filePath", filePath).Msg("下载已取消")
@@ -106,6 +113,11 @@ func (d *Downloader) DownloadBundleFile(ctx context.Context, bundleFile model.Bu
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
+			// 如果允许文件不存在，404错误被视为正常情况
+			if allowNotFound && resp.StatusCode == http.StatusNotFound {
+				log.DefaultLogger.Info().Str("url", url).Str("filePath", filePath).Msg("文件不存在，跳过下载")
+				return nil
+			}
 			log.DefaultLogger.Error().Str("url", url).Int("statusCode", resp.StatusCode).Msg("下载文件HTTP错误")
 			return fmt.Errorf("下载文件HTTP错误: %d", resp.StatusCode)
 		}
@@ -185,13 +197,19 @@ func NewLive2dBuilder(
 //   - ctx: 上下文
 //   - bundleFile: 资源包文件信息
 //   - filePath: 保存路径
+//   - allowNotFound: 是否允许文件不存在
 //
 // 返回:
 //   - string: 相对路径
 //   - error: 错误信息
-func (b *Live2dBuilder) ProcessFile(ctx context.Context, bundleFile model.BundleFile, filePath string) (string, error) {
+func (b *Live2dBuilder) ProcessFile(
+	ctx context.Context,
+	bundleFile model.BundleFile,
+	filePath string,
+	allowNotFound bool,
+) (string, error) {
 	if _, statErr := os.Stat(filePath); os.IsNotExist(statErr) {
-		if downloadErr := b.downloader.DownloadBundleFile(ctx, bundleFile, filePath); downloadErr != nil {
+		if downloadErr := b.downloader.DownloadBundleFile(ctx, bundleFile, filePath, allowNotFound); downloadErr != nil {
 			return "", fmt.Errorf("下载文件失败: %w", downloadErr)
 		}
 	}
@@ -339,9 +357,10 @@ func (b *Live2dBuilder) prepareDownloadTasks() ([]downloadTask, []string) {
 	modelFile := filepath.Join(b.dataPath, "model.moc")
 	if _, err := os.Stat(modelFile); os.IsNotExist(err) {
 		tasks = append(tasks, downloadTask{
-			bundleFile: b.data.Model,
-			filePath:   modelFile,
-			result:     make(chan downloadResult, 1),
+			bundleFile:    b.data.Model,
+			filePath:      modelFile,
+			allowNotFound: false, // 模型文件必须存在
+			result:        make(chan downloadResult, 1),
 		})
 	} else {
 		existingFiles = append(existingFiles, modelFile)
@@ -351,9 +370,10 @@ func (b *Live2dBuilder) prepareDownloadTasks() ([]downloadTask, []string) {
 	physicsFile := filepath.Join(b.dataPath, "physics.json")
 	if _, err := os.Stat(physicsFile); os.IsNotExist(err) {
 		tasks = append(tasks, downloadTask{
-			bundleFile: b.data.Physics,
-			filePath:   physicsFile,
-			result:     make(chan downloadResult, 1),
+			bundleFile:    b.data.Physics,
+			filePath:      physicsFile,
+			allowNotFound: true, // physics.json文件允许不存在
+			result:        make(chan downloadResult, 1),
 		})
 	} else {
 		existingFiles = append(existingFiles, physicsFile)
@@ -365,9 +385,10 @@ func (b *Live2dBuilder) prepareDownloadTasks() ([]downloadTask, []string) {
 		file := filepath.Join(texturePath, texture.FileName)
 		if _, err := os.Stat(file); os.IsNotExist(err) {
 			tasks = append(tasks, downloadTask{
-				bundleFile: texture,
-				filePath:   file,
-				result:     make(chan downloadResult, 1),
+				bundleFile:    texture,
+				filePath:      file,
+				allowNotFound: false, // 纹理文件必须存在
+				result:        make(chan downloadResult, 1),
 			})
 		} else {
 			existingFiles = append(existingFiles, file)
@@ -380,9 +401,10 @@ func (b *Live2dBuilder) prepareDownloadTasks() ([]downloadTask, []string) {
 		file := filepath.Join(motionPath, motion.FileName)
 		if _, err := os.Stat(file); os.IsNotExist(err) {
 			tasks = append(tasks, downloadTask{
-				bundleFile: motion,
-				filePath:   file,
-				result:     make(chan downloadResult, 1),
+				bundleFile:    motion,
+				filePath:      file,
+				allowNotFound: false, // 动作文件必须存在
+				result:        make(chan downloadResult, 1),
 			})
 		} else {
 			existingFiles = append(existingFiles, file)
@@ -395,9 +417,10 @@ func (b *Live2dBuilder) prepareDownloadTasks() ([]downloadTask, []string) {
 		file := filepath.Join(expressionPath, expression.FileName)
 		if _, err := os.Stat(file); os.IsNotExist(err) {
 			tasks = append(tasks, downloadTask{
-				bundleFile: expression,
-				filePath:   file,
-				result:     make(chan downloadResult, 1),
+				bundleFile:    expression,
+				filePath:      file,
+				allowNotFound: false, // 表情文件必须存在
+				result:        make(chan downloadResult, 1),
 			})
 		} else {
 			existingFiles = append(existingFiles, file)
@@ -422,7 +445,7 @@ func (b *Live2dBuilder) startWorkerPool(ctx context.Context, taskChan chan downl
 					errorChan <- errors.New("下载已取消")
 					return
 				default:
-					if downloadErr := b.downloader.DownloadBundleFile(ctx, task.bundleFile, task.filePath); downloadErr != nil {
+					if downloadErr := b.downloader.DownloadBundleFile(ctx, task.bundleFile, task.filePath, task.allowNotFound); downloadErr != nil {
 						task.result <- downloadResult{err: fmt.Errorf("下载文件失败: %w", downloadErr)}
 						continue
 					}

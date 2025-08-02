@@ -83,7 +83,7 @@ func TestDownloadBundleFile(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			downloadErr := downloader.DownloadBundleFile(ctx, tt.bundleFile, tt.filePath)
+			downloadErr := downloader.DownloadBundleFile(ctx, tt.bundleFile, tt.filePath, false)
 
 			if tt.wantErr {
 				require.Error(t, downloadErr, "DownloadBundleFile() should return error for invalid file")
