@@ -18,6 +18,8 @@ builds:
     main: ./cmd/bestdori-live2d-downloader
     binary: bestdori-live2d-downloader
     dir: .
+    ldflags:
+      - -s -w -X pkg/version.Version={{.Version}} -X pkg/version.Commit={{.ShortCommit}} -X pkg/version.BuiltBy=goreleaser
 
 archives:
   - format: tar.gz
