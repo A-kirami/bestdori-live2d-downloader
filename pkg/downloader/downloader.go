@@ -131,6 +131,11 @@ func (d *Downloader) DownloadBundleFile(ctx context.Context, bundleFile model.Bu
 
 		_, err = io.Copy(file, resp.Body)
 		if err != nil {
+			// 判断是否为 context 超时或取消
+			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+				log.DefaultLogger.Error().Str("filePath", filePath).Err(err).Msg("下载超时或被取消")
+				return fmt.Errorf("下载超时或被取消: %w", err)
+			}
 			log.DefaultLogger.Error().Str("filePath", filePath).Err(err).Msg("写入文件失败")
 			return fmt.Errorf("写入文件失败: %w", err)
 		}
@@ -442,15 +447,14 @@ func (b *Live2dBuilder) startWorkerPool(ctx context.Context, taskChan chan downl
 // 返回:
 //   - error: 错误信息
 func (b *Live2dBuilder) processDownloadResults(ctx context.Context, tasks []downloadTask, completedFiles int) error {
-	var lastErr error
 	for i := range tasks {
 		select {
 		case <-ctx.Done():
 			return errors.New("下载已取消")
 		case result := <-tasks[i].result:
 			if result.err != nil {
-				lastErr = result.err
-				continue
+				// 直接返回第一个错误，不包裹
+				return result.err
 			}
 
 			// 更新当前文件的进度
@@ -462,9 +466,6 @@ func (b *Live2dBuilder) processDownloadResults(ctx context.Context, tasks []down
 			// 更新模型数据
 			updateModelData(b.model, tasks[i].filePath, result.relPath)
 		}
-	}
-	if lastErr != nil {
-		return fmt.Errorf("处理文件失败: %w", lastErr)
 	}
 	return nil
 }
