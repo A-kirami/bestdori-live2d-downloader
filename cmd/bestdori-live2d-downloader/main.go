@@ -391,10 +391,6 @@ func (a *App) handleDirectDownload(input string) bool {
 		return true
 	}
 
-	// 初始化下载列表
-	for _, name := range modelNames {
-		a.tuiModel.AddDownloadItem(name, 1)
-	}
 	a.tuiModel.State = "downloading"
 	a.tuiModel.DownloadList.Title = "下载进度"
 

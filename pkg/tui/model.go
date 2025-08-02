@@ -587,17 +587,12 @@ func (m *Model) View() string {
 
 func (m *Model) AddDownloadItem(name string, totalFiles int) {
 	// 检查是否已存在相同名称的下载项
-	for existingName := range m.Items {
-		// 如果新名称是现有名称的子串，或现有名称是新名称的子串，则认为是重复项
-		if strings.Contains(existingName, name) || strings.Contains(name, existingName) {
-			// 更新现有项的总数
-			if item, exists := m.Items[existingName]; exists {
-				item.Total = totalFiles
-				item.Current = 0 // 重置当前进度
-				m.updateDownloadList()
-			}
-			return
-		}
+	if item, exists := m.Items[name]; exists {
+		// 如果已存在，更新总数和重置进度
+		item.Total = totalFiles
+		item.Current = 0 // 重置当前进度
+		m.updateDownloadList()
+		return
 	}
 
 	item := &DownloadItem{
