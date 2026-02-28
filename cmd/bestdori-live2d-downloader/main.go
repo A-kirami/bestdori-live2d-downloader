@@ -100,18 +100,15 @@ func (a *App) getLive2dPath(live2dName string) (string, error) {
 		return "", errors.New("无效的Live2D名称格式")
 	}
 
-	// 依次尝试每一段，直到找到可解析为数字的角色ID
-	var charaID int
-	var err error
+	// 找到第一个可解析的角色ID位置
 	foundIdx := -1
-	var costumePrefix strings.Builder
+	var charaID int
 	for i, p := range parts {
-		charaID, err = strconv.Atoi(p)
+		id, err := strconv.Atoi(p)
 		if err == nil {
 			foundIdx = i
+			charaID = id
 			break
-		} else {
-			costumePrefix.WriteString(p + "_")
 		}
 	}
 	if foundIdx == -1 {
@@ -125,12 +122,13 @@ func (a *App) getLive2dPath(live2dName string) (string, error) {
 		return "", errors.New("无效的Live2D名称格式: 缺少服装部分")
 	}
 
-	costumePart := strings.Join(parts[foundIdx+1:], "_")
+	prefix := strings.Join(parts[:foundIdx], "_")        // 可能为空
+	costumePart := strings.Join(parts[foundIdx+1:], "_") // 服装部分
+	costume := strings.Trim(strings.Join([]string{prefix, costumePart}, "_"), "_")
 
-	// 尝试获取角色信息
+	// 后续逻辑仅使用 charaID 和 costume
 	chara, err := a.apiClient.GetChara(a.ctx, charaID)
 	if err != nil {
-		// 如果获取角色信息失败，使用角色ID作为目录名
 		log.DefaultLogger.Warn().Int("charaID", charaID).Err(err).Msg("获取角色信息失败，使用角色ID作为目录名")
 		path := filepath.Join(config.Get().Live2dSavePath, fmt.Sprintf("chara_%03d", charaID), costumePart)
 		log.DefaultLogger.Info().Str("path", path).Msg("获取Live2D路径成功")
@@ -147,7 +145,6 @@ func (a *App) getLive2dPath(live2dName string) (string, error) {
 		return path, nil
 	}
 
-	costume := costumePrefix.String() + costumePart
 	path := filepath.Join(config.Get().Live2dSavePath, strings.ToLower(firstName), costume)
 	log.DefaultLogger.Info().Str("path", path).Msg("获取Live2D路径成功")
 	return path, nil
