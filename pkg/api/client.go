@@ -23,13 +23,13 @@ import (
 // Client 表示 API 客户端
 // 负责处理与 Bestdori API 的所有交互.
 type Client struct {
-	useCharaCache      bool                                // 是否使用角色信息缓存
-	charaCachePath     string                              // 角色信息缓存路径
-	cacheDuration      time.Duration                       // 缓存过期时间
-	charaRosterURL     string                              // 角色信息 API URL
-	defaultAssetServer string                              // 默认 Bestdori 资源服务器标签
-	assetServers       map[string]config.AssetServerConfig // Bestdori 资源服务器配置
-	httpClient         *http.Client                        // HTTP 客户端
+	useCharaCache  bool                                // 是否使用角色信息缓存
+	charaCachePath string                              // 角色信息缓存路径
+	cacheDuration  time.Duration                       // 缓存过期时间
+	charaRosterURL string                              // 角色信息 API URL
+	serverTags     []string                            // Bestdori 资源服务器标签 (有序)
+	assetServers   map[string]config.AssetServerConfig // Bestdori 资源服务器配置
+	httpClient     *http.Client                        // HTTP 客户端
 }
 
 // NewClient 创建新的 API 客户端实例
@@ -39,12 +39,12 @@ func NewClient() *Client {
 	cfg := config.Get()
 	// s, _ := cfg.AssetServers[cfg.DefaultAssetServer]
 	return &Client{
-		useCharaCache:      cfg.UseCharaCache,
-		charaCachePath:     cfg.CharaCachePath,
-		cacheDuration:      cfg.CacheDuration,
-		charaRosterURL:     cfg.CharaRosterURL,
-		defaultAssetServer: cfg.DefaultAssetServer,
-		assetServers:       cfg.AssetServers,
+		useCharaCache:  cfg.UseCharaCache,
+		charaCachePath: cfg.CharaCachePath,
+		cacheDuration:  cfg.CacheDuration,
+		charaRosterURL: cfg.CharaRosterURL,
+		serverTags:     cfg.ServerTags,
+		assetServers:   cfg.AssetServers,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -202,7 +202,12 @@ func (c *Client) getSingleLive2dAssets(
 func (c *Client) getLive2dAssets(ctx context.Context) (map[string]string, error) {
 	live2dAssets := make(map[string]string)
 
-	for tag, s := range c.assetServers {
+	for _, tag := range c.serverTags { // 有序
+		s, o := c.assetServers[tag]
+		if !o {
+			return nil, fmt.Errorf("未定义的 Bestdori 服务器标签: %s", s)
+		}
+
 		newLive2dAssets, err := c.getSingleLive2dAssets(ctx, tag, &s)
 		if err != nil {
 			return nil, err
@@ -388,5 +393,5 @@ func (c *Client) SetUseCharaCache(use bool) {
 // 返回:
 //   - string: 默认 Bestdori 服务器标签
 func (c *Client) GetDefaultAssetServer() string {
-	return c.defaultAssetServer
+	return c.serverTags[0]
 }

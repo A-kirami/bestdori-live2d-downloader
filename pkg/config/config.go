@@ -25,8 +25,10 @@ type Config struct {
 	CacheDuration time.Duration // 缓存过期时间
 
 	// API 配置
-	CharaRosterURL     string                       // 角色信息 API URL
-	DefaultAssetServer string                       // 默认 Bestdori 资源服务器标签
+	CharaRosterURL string // 角色信息 API URL
+	// DefaultAssetServer 指定默认使用的资源服务器（例如 "jp"）
+	DefaultAssetServer string
+	ServerTags         []string                     // Bestdori 资源服务器标签 (有序)
 	AssetServers       map[string]AssetServerConfig // Bestdori 资源服务器
 
 	// 下载配置
@@ -74,7 +76,8 @@ func DefaultConfig() *Config {
 
 		// API 配置
 		CharaRosterURL:     "https://bestdori.com/api/characters",
-		DefaultAssetServer: DefaultAssetServers()[0],
+		DefaultAssetServer: "jp",
+		ServerTags:         DefaultAssetServers(),
 		AssetServers:       DefaultAssetServersConfig(),
 
 		// 下载配置
