@@ -51,7 +51,7 @@ func DefaultAssetServerConfigTemplate(s string) AssetServerConfig {
 	}
 }
 
-// DefaultAssetServersConfig 返回默认 Bestdori 资源服务器配置
+// DefaultAssetServersConfig 返回默认 Bestdori 资源服务器配置.
 func DefaultAssetServersConfig() map[string]AssetServerConfig {
 	serverConfigs := make(map[string]AssetServerConfig)
 	for _, s := range DefaultAssetServers() {

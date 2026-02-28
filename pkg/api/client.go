@@ -174,7 +174,11 @@ func (c *Client) GetChara(ctx context.Context, charaID int) (map[string]any, err
 // 返回:
 //   - map[string]any: Live2D 资源映射
 //   - error: 错误信息
-func (c *Client) getSingleLive2dAssets(ctx context.Context, tag string, s *config.AssetServerConfig) (map[string]any, error) {
+func (c *Client) getSingleLive2dAssets(
+	ctx context.Context,
+	tag string,
+	s *config.AssetServerConfig,
+) (map[string]any, error) {
 	assetsInfo, err := c.FetchData(ctx, s.AssetsIndexURL, fmt.Sprintf("assets_info_%s.json", tag))
 	if err != nil {
 		return nil, err
@@ -230,8 +234,18 @@ func (c *Client) GetCharaCostumes(ctx context.Context, charaID int) ([]model.Liv
 
 	var costumes []model.Live2dAsset
 	for costume, server := range live2dAssets {
-		// exist := costume[:3] == fmt.Sprintf("%03d", charaID) // example: bili_001_collabo_r
-		exist := strings.Contains(costume, fmt.Sprintf("%03d", charaID))
+		// 仅在名称按 '_' 分段且存在完整的 %03d 段且该段不是最后一段时视为存在
+		exist := false
+		parts := strings.Split(costume, "_")
+		if len(parts) >= 3 {
+			idStr := fmt.Sprintf("%03d", charaID)
+			for idx, p := range parts {
+				if p == idStr && idx < len(parts)-1 {
+					exist = true
+					break
+				}
+			}
+		}
 
 		if exist && !strings.HasSuffix(costume, "general") {
 			costumes = append(costumes, model.Live2dAsset{
@@ -280,7 +294,10 @@ func (c *Client) GetCharaCostumes(ctx context.Context, charaID int) ([]model.Liv
 //   - *config.AssetServerConfig: 模型所属 Bestdori 服务器 API 信息
 //   - *model.BuildData: Live2D 构建数据
 //   - error: 错误信息
-func (c *Client) GetLive2dData(ctx context.Context, live2d *model.Live2dAsset) (*config.AssetServerConfig, *model.BuildData, error) {
+func (c *Client) GetLive2dData(
+	ctx context.Context,
+	live2d *model.Live2dAsset,
+) (*config.AssetServerConfig, *model.BuildData, error) {
 	// 获取模型所属服务器的配置
 	s, o := c.assetServers[live2d.Server]
 	if !o {

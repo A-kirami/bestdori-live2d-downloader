@@ -76,7 +76,7 @@ type Data struct {
 }
 
 // Live2dAsset 表示 Live2D 模型资源信息
-// 用于存储资源映射及其所属服务器
+// 用于存储资源映射及其所属服务器.
 type Live2dAsset struct {
 	Server  string
 	Costume string

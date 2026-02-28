@@ -85,7 +85,11 @@ func NewDownloader(apiClient *api.Client, tuiModel *tui.Model, program *tea.Prog
 // 返回:
 //   - *http.Request: HTTP请求
 //   - error: 错误信息
-func (d *Downloader) createDownloadRequest(ctx context.Context, s *config.AssetServerConfig, bundleFile model.BundleFile) (*http.Request, error) {
+func (d *Downloader) createDownloadRequest(
+	ctx context.Context,
+	s *config.AssetServerConfig,
+	bundleFile model.BundleFile,
+) (*http.Request, error) {
 	url := fmt.Sprintf("%s/%s_rip/%s", s.BaseAssetsURL, bundleFile.BundleName, bundleFile.FileName)
 	log.DefaultLogger.Info().Str("url", url).Msg("开始下载文件")
 
@@ -292,7 +296,13 @@ func (b *Live2dBuilder) ProcessFile(
 	allowNotFound bool,
 ) (string, error) {
 	if _, statErr := os.Stat(filePath); os.IsNotExist(statErr) {
-		if downloadErr := b.downloader.DownloadBundleFile(ctx, b.server, bundleFile, filePath, allowNotFound); downloadErr != nil {
+		if downloadErr := b.downloader.DownloadBundleFile(
+			ctx,
+			b.server,
+			bundleFile,
+			filePath,
+			allowNotFound,
+		); downloadErr != nil {
 			return "", fmt.Errorf("下载文件失败: %w", downloadErr)
 		}
 	}
@@ -528,7 +538,13 @@ func (b *Live2dBuilder) startWorkerPool(ctx context.Context, taskChan chan downl
 					errorChan <- errors.New("下载已取消")
 					return
 				default:
-					if downloadErr := b.downloader.DownloadBundleFile(ctx, b.server, task.bundleFile, task.filePath, task.allowNotFound); downloadErr != nil {
+					if downloadErr := b.downloader.DownloadBundleFile(
+						ctx,
+						b.server,
+						task.bundleFile,
+						task.filePath,
+						task.allowNotFound,
+					); downloadErr != nil {
 						task.result <- downloadResult{err: fmt.Errorf("下载文件失败: %w", downloadErr)}
 						continue
 					}

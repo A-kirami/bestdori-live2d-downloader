@@ -101,17 +101,17 @@ func (a *App) getLive2dPath(live2dName string) (string, error) {
 	}
 
 	// 依次尝试每一段，直到找到可解析为数字的角色ID
-	costumePrefix := ""
 	var charaID int
 	var err error
 	foundIdx := -1
+	var costumePrefix strings.Builder
 	for i, p := range parts {
 		charaID, err = strconv.Atoi(p)
 		if err == nil {
 			foundIdx = i
 			break
 		} else {
-			costumePrefix += p + "_"
+			costumePrefix.WriteString(p + "_")
 		}
 	}
 	if foundIdx == -1 {
@@ -147,7 +147,7 @@ func (a *App) getLive2dPath(live2dName string) (string, error) {
 		return path, nil
 	}
 
-	costume := costumePrefix + costumePart
+	costume := costumePrefix.String() + costumePart
 	path := filepath.Join(config.Get().Live2dSavePath, strings.ToLower(firstName), costume)
 	log.DefaultLogger.Info().Str("path", path).Msg("获取Live2D路径成功")
 	return path, nil

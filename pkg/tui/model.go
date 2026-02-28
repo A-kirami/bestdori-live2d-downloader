@@ -565,7 +565,7 @@ func (m *Model) View() string {
 	case StateLoading:
 		s.WriteString(m.TextInput.View())
 		s.WriteString("\n\n")
-		s.WriteString(fmt.Sprintf("%s 正在搜索角色...", m.Spinner.View()))
+		fmt.Fprintf(&s, "%s 正在搜索角色...", m.Spinner.View())
 		s.WriteString("\n\n")
 		s.WriteString(helpStyle("按 Esc 或 Ctrl+C 退出"))
 
