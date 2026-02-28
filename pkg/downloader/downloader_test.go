@@ -17,6 +17,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var DefaultServer = "jp"
+var DefaultServerConfig = config.DefaultAssetServerConfigTemplate(DefaultServer)
+
 // setupTest 设置测试环境.
 func setupTest(t *testing.T) {
 	// 创建临时目录
@@ -83,7 +86,7 @@ func TestDownloadBundleFile(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			downloadErr := downloader.DownloadBundleFile(ctx, tt.bundleFile, tt.filePath, false)
+			downloadErr := downloader.DownloadBundleFile(ctx, &DefaultServerConfig, tt.bundleFile, tt.filePath, false)
 
 			if tt.wantErr {
 				require.Error(t, downloadErr, "DownloadBundleFile() should return error for invalid file")
@@ -173,7 +176,7 @@ func TestLive2dBuilder(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			builder := downloader.NewLive2dBuilder(tt.path, tt.buildData, d, "test_model")
+			builder := downloader.NewLive2dBuilder(tt.path, &DefaultServerConfig, tt.buildData, d, "test_model")
 			require.NotNil(t, builder, "NewLive2dBuilder() should not return nil")
 
 			constructErr := builder.Construct()

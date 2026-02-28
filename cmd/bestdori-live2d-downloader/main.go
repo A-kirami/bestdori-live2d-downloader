@@ -94,24 +94,45 @@ func (a *App) initialize() {
 
 // getLive2dPath 根据 Live2D 名称获取保存路径.
 func (a *App) getLive2dPath(live2dName string) (string, error) {
-	parts := strings.SplitN(live2dName, "_", SplitPartsCount)
-	if len(parts) != SplitPartsCount {
+	parts := strings.Split(live2dName, "_")
+	if len(parts) == 0 {
 		log.DefaultLogger.Error().Str("live2dName", live2dName).Msg("无效的Live2D名称格式")
 		return "", errors.New("无效的Live2D名称格式")
 	}
 
-	charaID, err := strconv.Atoi(parts[0])
-	if err != nil {
-		log.DefaultLogger.Error().Str("live2dName", live2dName).Err(err).Msg("无效的角色ID")
-		return "", fmt.Errorf("无效的角色ID: %w", err)
+	// 依次尝试每一段，直到找到可解析为数字的角色ID
+	costumePrefix := ""
+	var charaID int
+	var err error
+	foundIdx := -1
+	for i, p := range parts {
+		charaID, err = strconv.Atoi(p)
+		if err == nil {
+			foundIdx = i
+			break
+		} else {
+			costumePrefix += p + "_"
+		}
 	}
+	if foundIdx == -1 {
+		log.DefaultLogger.Error().Str("live2dName", live2dName).Msg("未找到可解析为数字的角色ID")
+		return "", errors.New("无效的角色ID: 未找到可解析为数字的部分")
+	}
+
+	// 角色ID 后必须还有服装部分
+	if foundIdx >= len(parts)-1 {
+		log.DefaultLogger.Error().Str("live2dName", live2dName).Msg("无效的Live2D名称格式: 缺少服装部分")
+		return "", errors.New("无效的Live2D名称格式: 缺少服装部分")
+	}
+
+	costumePart := strings.Join(parts[foundIdx+1:], "_")
 
 	// 尝试获取角色信息
 	chara, err := a.apiClient.GetChara(a.ctx, charaID)
 	if err != nil {
 		// 如果获取角色信息失败，使用角色ID作为目录名
 		log.DefaultLogger.Warn().Int("charaID", charaID).Err(err).Msg("获取角色信息失败，使用角色ID作为目录名")
-		path := filepath.Join(config.Get().Live2dSavePath, fmt.Sprintf("chara_%03d", charaID), parts[1])
+		path := filepath.Join(config.Get().Live2dSavePath, fmt.Sprintf("chara_%03d", charaID), costumePart)
 		log.DefaultLogger.Info().Str("path", path).Msg("获取Live2D路径成功")
 		return path, nil
 	}
@@ -121,38 +142,39 @@ func (a *App) getLive2dPath(live2dName string) (string, error) {
 	if !ok {
 		// 如果无法获取角色名，使用角色ID作为目录名
 		log.DefaultLogger.Warn().Int("charaID", charaID).Msg("无效的角色名字格式，使用角色ID作为目录名")
-		path := filepath.Join(config.Get().Live2dSavePath, fmt.Sprintf("chara_%03d", charaID), parts[1])
+		path := filepath.Join(config.Get().Live2dSavePath, fmt.Sprintf("chara_%03d", charaID), costumePart)
 		log.DefaultLogger.Info().Str("path", path).Msg("获取Live2D路径成功")
 		return path, nil
 	}
 
-	path := filepath.Join(config.Get().Live2dSavePath, strings.ToLower(firstName), parts[1])
+	costume := costumePrefix + costumePart
+	path := filepath.Join(config.Get().Live2dSavePath, strings.ToLower(firstName), costume)
 	log.DefaultLogger.Info().Str("path", path).Msg("获取Live2D路径成功")
 	return path, nil
 }
 
 // downloadLive2d 下载指定的 Live2D 模型.
-func (a *App) downloadLive2d(live2dName string) error {
-	log.DefaultLogger.Info().Str("live2dName", live2dName).Msg("开始下载Live2D")
+func (a *App) downloadLive2d(live2d *model.Live2dAsset) error {
+	log.DefaultLogger.Info().Str("live2dName", live2d.Costume).Msg("开始下载Live2D")
 
-	data, err := a.apiClient.GetLive2dData(a.ctx, live2dName)
+	server, data, err := a.apiClient.GetLive2dData(a.ctx, live2d)
 	if err != nil {
-		log.DefaultLogger.Error().Str("live2dName", live2dName).Err(err).Msg("获取Live2D数据失败")
+		log.DefaultLogger.Error().Str("live2dName", live2d.Costume).Err(err).Msg("获取Live2D数据失败")
 		return fmt.Errorf("获取Live2D数据失败: %w", err)
 	}
 
-	path, err := a.getLive2dPath(live2dName)
+	path, err := a.getLive2dPath(live2d.Costume)
 	if err != nil {
 		return err
 	}
 
-	builder := downloader.NewLive2dBuilder(path, data, a.dl, live2dName)
+	builder := downloader.NewLive2dBuilder(path, server, data, a.dl, live2d.String())
 	if constructErr := builder.Construct(); constructErr != nil {
-		log.DefaultLogger.Error().Str("live2dName", live2dName).Err(constructErr).Msg("构建Live2D模型失败")
+		log.DefaultLogger.Error().Str("live2dName", live2d.Costume).Err(constructErr).Msg("构建Live2D模型失败")
 		return fmt.Errorf("构建Live2D模型失败: %w", constructErr)
 	}
 
-	log.DefaultLogger.Info().Str("live2dName", live2dName).Str("path", path).Msg("Live2D下载完成")
+	log.DefaultLogger.Info().Str("live2dName", live2d.Costume).Str("path", path).Msg("Live2D下载完成")
 	return nil
 }
 
@@ -244,6 +266,11 @@ func (a *App) updateCharaCostumes(id int, firstName string, displayName string) 
 	// 清除之前的错误消息
 	a.tuiModel.ClearError()
 
+	var costumeNames []string
+	for _, live2d := range costumes {
+		costumeNames = append(costumeNames, live2d.String())
+	}
+
 	// 更新列表
 	a.tuiModel.CurrentCharaName = firstName
 	if displayName != firstName {
@@ -255,7 +282,7 @@ func (a *App) updateCharaCostumes(id int, firstName string, displayName string) 
 		Str("charaName", firstName).
 		Int("costumesCount", len(costumes)).
 		Msg("找到角色服装列表")
-	a.program.Send(tui.UpdateListMsg{Items: costumes})
+	a.program.Send(tui.UpdateListMsg{Items: costumeNames})
 
 	return true
 }
@@ -394,6 +421,16 @@ func (a *App) handleDirectDownload(input string) bool {
 	a.tuiModel.State = "downloading"
 	a.tuiModel.DownloadList.Title = "下载进度"
 
+	// TODO: 可选 Bestdori 服务器
+	// 设置默认服务器
+	for i, costume := range modelNames {
+		model := model.Live2dAsset{
+			Server:  a.apiClient.GetDefaultAssetServer(),
+			Costume: costume,
+		}
+		modelNames[i] = model.String()
+	}
+
 	// 使用批量下载功能处理多个模型
 	return a.handleBatchDownload(modelNames)
 }
@@ -425,7 +462,10 @@ func (a *App) downloadModel(
 	completed map[string]bool,
 	progressUpdated chan struct{},
 ) {
-	if err := a.downloadLive2d(costume); err != nil {
+	// 从格式化字符串读取模型信息
+	model, _ := model.Parse(costume) // 错误会在 downloadLive2d 抛出
+
+	if err := a.downloadLive2d(model); err != nil {
 		if err.Error() == ErrDownloadCancelled {
 			errChan <- err
 			return

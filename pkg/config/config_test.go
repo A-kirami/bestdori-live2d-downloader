@@ -24,12 +24,13 @@ func TestDefaultConfig(t *testing.T) {
 	assert.Equal(t, 24*time.Hour, cfg.CacheDuration, "CacheDuration should be correct")
 
 	// 测试 API 配置
-	assert.Equal(t, "https://bestdori.com/assets/jp", cfg.BaseAssetsURL, "BaseAssetsURL should be correct")
+	assetServer := cfg.AssetServers[cfg.DefaultAssetServer]
+	assert.Equal(t, "https://bestdori.com/assets/jp", assetServer.BaseAssetsURL, "BaseAssetsURL should be correct")
 	assert.Equal(t, "https://bestdori.com/api/characters", cfg.CharaRosterURL, "CharaRosterURL should be correct")
 	assert.Equal(
 		t,
 		"https://bestdori.com/api/explorer/jp/assets/_info.json",
-		cfg.AssetsIndexURL,
+		assetServer.AssetsIndexURL,
 		"AssetsIndexURL should be correct",
 	)
 
@@ -53,9 +54,11 @@ func TestInit(t *testing.T) {
 	assert.Equal(t, defaultCfg.LogPath, cfg.LogPath, "LogPath should match default")
 	assert.Equal(t, defaultCfg.UseCharaCache, cfg.UseCharaCache, "UseCharaCache should match default")
 	assert.Equal(t, defaultCfg.CacheDuration, cfg.CacheDuration, "CacheDuration should match default")
-	assert.Equal(t, defaultCfg.BaseAssetsURL, cfg.BaseAssetsURL, "BaseAssetsURL should match default")
+	defAssetServer := defaultCfg.AssetServers[defaultCfg.DefaultAssetServer]
+	curAssetServer := cfg.AssetServers[cfg.DefaultAssetServer]
+	assert.Equal(t, defAssetServer.BaseAssetsURL, curAssetServer.BaseAssetsURL, "BaseAssetsURL should match default")
 	assert.Equal(t, defaultCfg.CharaRosterURL, cfg.CharaRosterURL, "CharaRosterURL should match default")
-	assert.Equal(t, defaultCfg.AssetsIndexURL, cfg.AssetsIndexURL, "AssetsIndexURL should match default")
+	assert.Equal(t, defAssetServer.AssetsIndexURL, curAssetServer.AssetsIndexURL, "AssetsIndexURL should match default")
 	assert.Equal(
 		t,
 		defaultCfg.MaxConcurrentDownloads,
@@ -68,9 +71,10 @@ func TestInit(t *testing.T) {
 func TestGet(t *testing.T) {
 	cfg := config.Get()
 	assert.NotNil(t, cfg, "Get() should not return nil")
-	assert.NotEmpty(t, cfg.BaseAssetsURL, "BaseAssetsURL should not be empty")
+	assetServer := cfg.AssetServers[cfg.DefaultAssetServer]
+	assert.NotEmpty(t, assetServer.BaseAssetsURL, "BaseAssetsURL should not be empty")
 	assert.NotEmpty(t, cfg.CharaRosterURL, "CharaRosterURL should not be empty")
-	assert.NotEmpty(t, cfg.AssetsIndexURL, "AssetsIndexURL should not be empty")
+	assert.NotEmpty(t, assetServer.AssetsIndexURL, "AssetsIndexURL should not be empty")
 	assert.NotEmpty(t, cfg.Live2dSavePath, "Live2dSavePath should not be empty")
 	assert.NotEmpty(t, cfg.CharaCachePath, "CharaCachePath should not be empty")
 	assert.Positive(t, cfg.CacheDuration, "CacheDuration should be greater than 0")

@@ -23,13 +23,13 @@ import (
 // Client 表示 API 客户端
 // 负责处理与 Bestdori API 的所有交互.
 type Client struct {
-	useCharaCache  bool          // 是否使用角色信息缓存
-	charaCachePath string        // 角色信息缓存路径
-	cacheDuration  time.Duration // 缓存过期时间
-	baseAssetsURL  string        // Bestdori 资源基础 URL
-	charaRosterURL string        // 角色信息 API URL
-	assetsIndexURL string        // 资源索引 API URL
-	httpClient     *http.Client  // HTTP 客户端
+	useCharaCache      bool                                // 是否使用角色信息缓存
+	charaCachePath     string                              // 角色信息缓存路径
+	cacheDuration      time.Duration                       // 缓存过期时间
+	charaRosterURL     string                              // 角色信息 API URL
+	defaultAssetServer string                              // 默认 Bestdori 资源服务器标签
+	assetServers       map[string]config.AssetServerConfig // Bestdori 资源服务器配置
+	httpClient         *http.Client                        // HTTP 客户端
 }
 
 // NewClient 创建新的 API 客户端实例
@@ -37,13 +37,14 @@ type Client struct {
 //   - *Client: 新的 API 客户端实例
 func NewClient() *Client {
 	cfg := config.Get()
+	// s, _ := cfg.AssetServers[cfg.DefaultAssetServer]
 	return &Client{
-		useCharaCache:  cfg.UseCharaCache,
-		charaCachePath: cfg.CharaCachePath,
-		cacheDuration:  cfg.CacheDuration,
-		baseAssetsURL:  cfg.BaseAssetsURL,
-		charaRosterURL: cfg.CharaRosterURL,
-		assetsIndexURL: cfg.AssetsIndexURL,
+		useCharaCache:      cfg.UseCharaCache,
+		charaCachePath:     cfg.CharaCachePath,
+		cacheDuration:      cfg.CacheDuration,
+		charaRosterURL:     cfg.CharaRosterURL,
+		defaultAssetServer: cfg.DefaultAssetServer,
+		assetServers:       cfg.AssetServers,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -164,15 +165,17 @@ func (c *Client) GetChara(ctx context.Context, charaID int) (map[string]any, err
 	return c.FetchData(ctx, url, fmt.Sprintf("chara_%d.json", charaID))
 }
 
-// getLive2dAssets 获取 Live2D 资源映射
+// getSingleLive2dAssets 获取单个资源服务器的 Live2D 资源映射
 // 参数:
 //   - ctx: 上下文
+//   - tag: 服务器标签
+//   - s: Bestdori 资源服务器
 //
 // 返回:
 //   - map[string]any: Live2D 资源映射
 //   - error: 错误信息
-func (c *Client) getLive2dAssets(ctx context.Context) (map[string]any, error) {
-	assetsInfo, err := c.FetchData(ctx, c.assetsIndexURL, "assets_info.json")
+func (c *Client) getSingleLive2dAssets(ctx context.Context, tag string, s *config.AssetServerConfig) (map[string]any, error) {
+	assetsInfo, err := c.FetchData(ctx, s.AssetsIndexURL, fmt.Sprintf("assets_info_%s.json", tag))
 	if err != nil {
 		return nil, err
 	}
@@ -180,6 +183,32 @@ func (c *Client) getLive2dAssets(ctx context.Context) (map[string]any, error) {
 	live2dAssets, ok := assetsInfo["live2d"].(map[string]any)["chara"].(map[string]any)
 	if !ok {
 		return nil, errors.New("无效的资源索引格式")
+	}
+
+	return live2dAssets, nil
+}
+
+// getLive2dAssets 获取 Live2D 资源映射
+// 参数:
+//   - ctx: 上下文
+//
+// 返回:
+//   - map[string]string: Live2D 资源及所属服务器
+//   - error: 错误信息
+func (c *Client) getLive2dAssets(ctx context.Context) (map[string]string, error) {
+	live2dAssets := make(map[string]string)
+
+	for tag, s := range c.assetServers {
+		newLive2dAssets, err := c.getSingleLive2dAssets(ctx, tag, &s)
+		if err != nil {
+			return nil, err
+		}
+
+		for costume := range newLive2dAssets {
+			if _, o := live2dAssets[costume]; !o {
+				live2dAssets[costume] = tag
+			}
+		}
 	}
 
 	return live2dAssets, nil
@@ -193,28 +222,34 @@ func (c *Client) getLive2dAssets(ctx context.Context) (map[string]any, error) {
 // 返回:
 //   - []string: 服装列表（按特定规则排序）
 //   - error: 错误信息
-func (c *Client) GetCharaCostumes(ctx context.Context, charaID int) ([]string, error) {
+func (c *Client) GetCharaCostumes(ctx context.Context, charaID int) ([]model.Live2dAsset, error) {
 	live2dAssets, err := c.getLive2dAssets(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	var costumes []string
-	for live2d := range live2dAssets {
-		if live2d[:3] == fmt.Sprintf("%03d", charaID) && !strings.HasSuffix(live2d, "general") {
-			costumes = append(costumes, live2d)
+	var costumes []model.Live2dAsset
+	for costume, server := range live2dAssets {
+		// exist := costume[:3] == fmt.Sprintf("%03d", charaID) // example: bili_001_collabo_r
+		exist := strings.Contains(costume, fmt.Sprintf("%03d", charaID))
+
+		if exist && !strings.HasSuffix(costume, "general") {
+			costumes = append(costumes, model.Live2dAsset{
+				Server:  server,
+				Costume: costume,
+			})
 		}
 	}
 
 	// 对服装列表进行排序
 	sort.Slice(costumes, func(i, j int) bool {
 		// 提取服装ID（模型名称中的数字部分）
-		iParts := strings.Split(costumes[i], "_")
-		jParts := strings.Split(costumes[j], "_")
+		iParts := strings.Split(costumes[i].Costume, "_")
+		jParts := strings.Split(costumes[j].Costume, "_")
 
 		// 如果包含"live_event"，将其排在后面
-		iHasEvent := strings.Contains(costumes[i], "live_event")
-		jHasEvent := strings.Contains(costumes[j], "live_event")
+		iHasEvent := strings.Contains(costumes[i].Costume, "live_event")
+		jHasEvent := strings.Contains(costumes[j].Costume, "live_event")
 
 		if iHasEvent != jHasEvent {
 			return !iHasEvent
@@ -230,7 +265,7 @@ func (c *Client) GetCharaCostumes(ctx context.Context, charaID int) ([]string, e
 		}
 
 		// 如果无法比较ID，则按字符串排序
-		return costumes[i] < costumes[j]
+		return costumes[i].Costume < costumes[j].Costume
 	})
 
 	return costumes, nil
@@ -239,42 +274,49 @@ func (c *Client) GetCharaCostumes(ctx context.Context, charaID int) ([]string, e
 // GetLive2dData 获取指定 Live2D 模型的构建数据
 // 参数:
 //   - ctx: 上下文
-//   - live2dName: Live2D 模型名称
+//   - live2d: Live2D 资源
 //
 // 返回:
+//   - *config.AssetServerConfig: 模型所属 Bestdori 服务器 API 信息
 //   - *model.BuildData: Live2D 构建数据
 //   - error: 错误信息
-func (c *Client) GetLive2dData(ctx context.Context, live2dName string) (*model.BuildData, error) {
+func (c *Client) GetLive2dData(ctx context.Context, live2d *model.Live2dAsset) (*config.AssetServerConfig, *model.BuildData, error) {
+	// 获取模型所属服务器的配置
+	s, o := c.assetServers[live2d.Server]
+	if !o {
+		return nil, nil, fmt.Errorf("不存在的服务器来源: %s", live2d.Server)
+	}
+
 	// 构建资源包 URL
-	url := fmt.Sprintf("%s/live2d/chara/%s_rip/buildData.asset", c.baseAssetsURL, live2dName)
-	log.DefaultLogger.Info().Str("live2dName", live2dName).Str("url", url).Msg("开始获取Live2D构建数据")
+	url := fmt.Sprintf("%s/live2d/chara/%s_rip/buildData.asset", s.BaseAssetsURL, live2d.Costume)
+	log.DefaultLogger.Info().Str("live2dName", live2d.Costume).Str("url", url).Msg("开始获取Live2D构建数据")
 
 	// 获取构建数据
 	data, err := c.FetchData(ctx, url, "")
 	if err != nil {
-		log.DefaultLogger.Error().Str("live2dName", live2dName).Err(err).Msg("获取构建数据失败")
-		return nil, fmt.Errorf("获取构建数据失败: %w", err)
+		log.DefaultLogger.Error().Str("live2dName", live2d.Costume).Err(err).Msg("获取构建数据失败")
+		return nil, nil, fmt.Errorf("获取构建数据失败: %w", err)
 	}
 
 	// 提取基础数据
 	baseData, ok := data["Base"].(map[string]any)
 	if !ok {
-		log.DefaultLogger.Error().Str("live2dName", live2dName).Msg("构建数据格式错误: 缺少 Base 字段")
-		return nil, errors.New("构建数据格式错误: 缺少 Base 字段")
+		log.DefaultLogger.Error().Str("live2dName", live2d.Costume).Msg("构建数据格式错误: 缺少 Base 字段")
+		return nil, nil, errors.New("构建数据格式错误: 缺少 Base 字段")
 	}
 
 	// 序列化基础数据
 	jsonData, err := json.Marshal(baseData)
 	if err != nil {
-		log.DefaultLogger.Error().Str("live2dName", live2dName).Err(err).Msg("序列化构建数据失败")
-		return nil, fmt.Errorf("序列化构建数据失败: %w", err)
+		log.DefaultLogger.Error().Str("live2dName", live2d.Costume).Err(err).Msg("序列化构建数据失败")
+		return nil, nil, fmt.Errorf("序列化构建数据失败: %w", err)
 	}
 
 	// 反序列化为 BuildData 结构
 	var buildData model.BuildData
 	if unmarshalErr := json.Unmarshal(jsonData, &buildData); unmarshalErr != nil {
-		log.DefaultLogger.Error().Str("live2dName", live2dName).Err(unmarshalErr).Msg("反序列化构建数据失败")
-		return nil, fmt.Errorf("反序列化构建数据失败: %w", unmarshalErr)
+		log.DefaultLogger.Error().Str("live2dName", live2d.Costume).Err(unmarshalErr).Msg("反序列化构建数据失败")
+		return nil, nil, fmt.Errorf("反序列化构建数据失败: %w", unmarshalErr)
 	}
 
 	// 处理 model 和 motions 文件的 .bytes 后缀
@@ -288,8 +330,8 @@ func (c *Client) GetLive2dData(ctx context.Context, live2dName string) (*model.B
 		buildData.Textures[i].EnsurePngSuffix()
 	}
 
-	log.DefaultLogger.Info().Str("live2dName", live2dName).Msg("Live2D构建数据处理完成")
-	return &buildData, nil
+	log.DefaultLogger.Info().Str("live2dName", live2d.Costume).Msg("Live2D构建数据处理完成")
+	return &s, &buildData, nil
 }
 
 // ValidateLive2dModel 验证指定的 Live2D 模型是否存在
@@ -323,4 +365,11 @@ func (c *Client) SetCharaCachePath(path string) {
 //   - use: 是否使用缓存
 func (c *Client) SetUseCharaCache(use bool) {
 	c.useCharaCache = use
+}
+
+// GetDefaultAssetServer 获取默认 Bestdori 服务器标签
+// 返回:
+//   - string: 默认 Bestdori 服务器标签
+func (c *Client) GetDefaultAssetServer() string {
+	return c.defaultAssetServer
 }

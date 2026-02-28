@@ -1,7 +1,17 @@
 // Package config 提供了程序的配置管理功能
 package config
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
+
+// AssetServerConfig 表示 Bestdori 资源服务器配置.
+type AssetServerConfig struct {
+	// API 配置
+	BaseAssetsURL  string // Bestdori 资源基础 URL
+	AssetsIndexURL string // 资源索引 API URL
+}
 
 // Config 表示程序的配置结构.
 type Config struct {
@@ -15,9 +25,9 @@ type Config struct {
 	CacheDuration time.Duration // 缓存过期时间
 
 	// API 配置
-	BaseAssetsURL  string // Bestdori 资源基础 URL
-	CharaRosterURL string // 角色信息 API URL
-	AssetsIndexURL string // 资源索引 API URL
+	CharaRosterURL     string                       // 角色信息 API URL
+	DefaultAssetServer string                       // 默认 Bestdori 资源服务器标签
+	AssetServers       map[string]AssetServerConfig // Bestdori 资源服务器
 
 	// 下载配置
 	MaxConcurrentDownloads int // 单个模型下载时的最大并发文件下载数
@@ -29,6 +39,26 @@ var (
 	//nolint:gochecknoglobals // 使用全局配置实例是必要的，因为需要在程序的不同部分访问相同的配置
 	globalConfig *Config
 )
+
+func DefaultAssetServers() []string {
+	return []string{"jp", "cn", "en", "kr", "tw"}
+}
+
+func DefaultAssetServerConfigTemplate(s string) AssetServerConfig {
+	return AssetServerConfig{
+		BaseAssetsURL:  fmt.Sprintf("https://bestdori.com/assets/%s", s),
+		AssetsIndexURL: fmt.Sprintf("https://bestdori.com/api/explorer/%s/assets/_info.json", s),
+	}
+}
+
+// DefaultAssetServersConfig 返回默认 Bestdori 资源服务器配置
+func DefaultAssetServersConfig() map[string]AssetServerConfig {
+	serverConfigs := make(map[string]AssetServerConfig)
+	for _, s := range DefaultAssetServers() {
+		serverConfigs[s] = DefaultAssetServerConfigTemplate(s)
+	}
+	return serverConfigs
+}
 
 // DefaultConfig 返回默认配置.
 func DefaultConfig() *Config {
@@ -43,9 +73,9 @@ func DefaultConfig() *Config {
 		CacheDuration: 24 * time.Hour,
 
 		// API 配置
-		BaseAssetsURL:  "https://bestdori.com/assets/jp",
-		CharaRosterURL: "https://bestdori.com/api/characters",
-		AssetsIndexURL: "https://bestdori.com/api/explorer/jp/assets/_info.json",
+		CharaRosterURL:     "https://bestdori.com/api/characters",
+		DefaultAssetServer: DefaultAssetServers()[0],
+		AssetServers:       DefaultAssetServersConfig(),
 
 		// 下载配置
 		MaxConcurrentDownloads: 20,

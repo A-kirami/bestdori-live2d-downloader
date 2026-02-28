@@ -2,7 +2,10 @@
 // 包括资源包文件、构建数据、动作文件、表情文件等类型
 package model
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // BundleFile 表示资源包文件
 // 用于描述从 Bestdori 下载的资源文件信息.
@@ -70,6 +73,33 @@ type Data struct {
 	Textures       []string                `json:"textures"`
 	Motions        map[string][]MotionFile `json:"motions"`
 	Expressions    []ExpressionFile        `json:"expressions"`
+}
+
+// Live2dAsset 表示 Live2D 模型资源信息
+// 用于存储资源映射及其所属服务器
+type Live2dAsset struct {
+	Server  string
+	Costume string
+}
+
+func (l *Live2dAsset) String() string {
+	return fmt.Sprintf("%s (%s)", l.Costume, l.Server)
+}
+
+func Parse(s string) (*Live2dAsset, error) {
+	l := strings.LastIndex(s, "(")
+	r := strings.LastIndex(s, ")")
+
+	if l == -1 || r == -1 || l >= r {
+		return nil, fmt.Errorf("错误的模型名称: %s", s)
+	}
+
+	obj := Live2dAsset{
+		Server:  strings.TrimSpace(s[l+1 : r]),
+		Costume: strings.TrimSpace(s[:l]),
+	}
+
+	return &obj, nil
 }
 
 // MatchChara 表示匹配的角色信息
