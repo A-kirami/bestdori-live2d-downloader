@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/A-kirami/bestdori-live2d-downloader/pkg/model"
 	"github.com/A-kirami/bestdori-live2d-downloader/pkg/version"
 
 	"slices"
@@ -97,8 +98,9 @@ func (i DownloadListItem) FilterValue() string { return i.Name }
 
 // listItem 表示列表项.
 type listItem struct {
-	title    string // 标题
-	selected bool   // 是否选中
+	title    string             // 标题
+	selected bool               // 是否选中
+	asset    *model.Live2dAsset // 对应的 Live2dAsset（如果有）
 }
 
 // Title 返回列表项的标题.
@@ -118,27 +120,27 @@ func (i listItem) FilterValue() string { return i.title }
 // Model 表示 TUI 模型
 // 包含所有 UI 组件和状态.
 type Model struct {
-	Items            map[string]*DownloadItem // 下载项映射，key 为项目名称，value 为下载项
-	ItemOrder        []string                 // 下载项顺序列表
-	Width            int                      // 界面宽度
-	Quitting         bool                     // 是否正在退出程序
-	TextInput        textinput.Model          // 文本输入框组件
-	Live2dList       list.Model               // Live2D 列表组件
-	DownloadList     list.Model               // 下载列表组件
-	SelectedIDs      []int                    // 选中的项目 ID 列表
-	State            string                   // 当前状态
-	SearchChan       chan string              // 搜索通道，用于处理搜索请求
-	SelectChan       chan []string            // 选择通道，用于处理选择请求
-	Spinner          spinner.Model            // 加载动画组件
-	CurrentCharaName string                   // 当前角色名称
-	ExtraCharaName   string                   // 额外角色名称
-	program          *tea.Program             // TUI 程序实例
-	cancelChan       chan struct{}            // 取消通道，用于取消操作
-	Ctx              context.Context          // 上下文，用于控制操作的生命周期
-	Cancel           context.CancelFunc       // 取消函数，用于取消上下文
-	ErrorMessage     string                   // 错误消息
-	TotalModels      int                      // 总模型数量
-	CompletedModels  int                      // 已完成的模型数量
+	Items            map[string]*DownloadItem  // 下载项映射，key 为项目名称，value 为下载项
+	ItemOrder        []string                  // 下载项顺序列表
+	Width            int                       // 界面宽度
+	Quitting         bool                      // 是否正在退出程序
+	TextInput        textinput.Model           // 文本输入框组件
+	Live2dList       list.Model                // Live2D 列表组件
+	DownloadList     list.Model                // 下载列表组件
+	SelectedIDs      []int                     // 选中的项目 ID 列表
+	State            string                    // 当前状态
+	SearchChan       chan string               // 搜索通道，用于处理搜索请求
+	SelectChan       chan []*model.Live2dAsset // 选择通道，用于处理选择请求
+	Spinner          spinner.Model             // 加载动画组件
+	CurrentCharaName string                    // 当前角色名称
+	ExtraCharaName   string                    // 额外角色名称
+	program          *tea.Program              // TUI 程序实例
+	cancelChan       chan struct{}             // 取消通道，用于取消操作
+	Ctx              context.Context           // 上下文，用于控制操作的生命周期
+	Cancel           context.CancelFunc        // 取消函数，用于取消上下文
+	ErrorMessage     string                    // 错误消息
+	TotalModels      int                       // 总模型数量
+	CompletedModels  int                       // 已完成的模型数量
 }
 
 // DownloadDelegate 用于下载进度列表的代理
@@ -215,7 +217,7 @@ func NewModel() Model {
 		DownloadList:    downloadList,
 		State:           StateInput,
 		SearchChan:      make(chan string, 1),
-		SelectChan:      make(chan []string, 1),
+		SelectChan:      make(chan []*model.Live2dAsset, 1),
 		Spinner:         s,
 		cancelChan:      make(chan struct{}), // 初始化取消通道
 		Ctx:             ctx,
@@ -232,7 +234,7 @@ func (m *Model) Init() tea.Cmd {
 
 // UpdateListMsg 表示更新列表消息.
 type UpdateListMsg struct {
-	Items []string // 列表项
+	Items []*model.Live2dAsset // 列表项
 }
 
 // UpdateDownloadListMsg 表示更新下载列表消息.
@@ -352,8 +354,8 @@ func (m *Model) handleSelectAll() {
 func (m *Model) handleListEnter() (tea.Model, tea.Cmd) {
 	selected := m.GetSelectedItems()
 	if len(selected) > 0 {
-		for _, name := range selected {
-			m.AddDownloadItem(name, 1)
+		for _, asset := range selected {
+			m.AddDownloadItem(asset.String(), 1)
 		}
 		m.State = StateDownloading
 		// 设置总体进度并立即更新标题
@@ -399,10 +401,15 @@ func (m *Model) handleDownloadingState(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // handleUpdateListMsg 处理更新列表消息.
 func (m *Model) handleUpdateListMsg(msg UpdateListMsg) (tea.Model, tea.Cmd) {
 	listItems := make([]list.Item, len(msg.Items))
-	for i, item := range msg.Items {
+	for i, asset := range msg.Items {
+		title := ""
+		if asset != nil {
+			title = asset.String()
+		}
 		listItems[i] = listItem{
-			title:    item,
+			title:    title,
 			selected: false,
+			asset:    asset,
 		}
 	}
 	m.Live2dList.SetItems(listItems)
@@ -650,12 +657,17 @@ func (m *Model) updateDownloadList() {
 	m.DownloadList.SetItems(items)
 }
 
-func (m *Model) SetLive2DList(items []string) {
+func (m *Model) SetLive2DList(items []*model.Live2dAsset) {
 	listItems := make([]list.Item, len(items))
-	for i, item := range items {
+	for i, asset := range items {
+		title := ""
+		if asset != nil {
+			title = asset.String()
+		}
 		listItems[i] = listItem{
-			title:    item,
+			title:    title,
 			selected: false,
+			asset:    asset,
 		}
 	}
 	m.Live2dList.SetItems(listItems)
@@ -664,38 +676,47 @@ func (m *Model) SetLive2DList(items []string) {
 	m.State = StateList
 }
 
-func (m *Model) GetSelectedItems() []string {
+func (m *Model) GetSelectedItems() []*model.Live2dAsset {
 	// 使用 map 来确保唯一性
-	uniqueItems := make(map[string]struct{})
+	unique := make(map[string]*model.Live2dAsset)
 	for _, id := range m.SelectedIDs {
 		if id < len(m.Live2dList.Items()) {
 			if item, ok := m.Live2dList.Items()[id].(listItem); ok {
-				uniqueItems[item.title] = struct{}{}
+				if item.asset != nil {
+					unique[item.asset.String()] = item.asset
+				} else {
+					unique[item.title] = nil
+				}
 			}
 		}
 	}
 
 	// 将 map 转换回切片
-	selected := make([]string, 0, len(uniqueItems))
-	for item := range uniqueItems {
-		selected = append(selected, item)
+	selected := make([]*model.Live2dAsset, 0, len(unique))
+	for _, asset := range unique {
+		selected = append(selected, asset)
 	}
 
-	// 对选中的项目进行排序
+	// 对选中的项目进行排序（基于字符串表示）
 	sort.Slice(selected, func(i, j int) bool {
-		// 提取服装ID（模型名称中的数字部分）
-		iParts := strings.Split(selected[i], "_")
-		jParts := strings.Split(selected[j], "_")
+		si := ""
+		sj := ""
+		if selected[i] != nil {
+			si = selected[i].String()
+		}
+		if selected[j] != nil {
+			sj = selected[j].String()
+		}
 
-		// 如果包含"live_event"，将其排在后面
-		iHasEvent := strings.Contains(selected[i], "live_event")
-		jHasEvent := strings.Contains(selected[j], "live_event")
+		iParts := strings.Split(si, "_")
+		jParts := strings.Split(sj, "_")
 
+		iHasEvent := strings.Contains(si, "live_event")
+		jHasEvent := strings.Contains(sj, "live_event")
 		if iHasEvent != jHasEvent {
 			return !iHasEvent
 		}
 
-		// 比较服装ID
 		if len(iParts) > 1 && len(jParts) > 1 {
 			iID, iErr := strconv.Atoi(iParts[1])
 			jID, jErr := strconv.Atoi(jParts[1])
@@ -704,8 +725,7 @@ func (m *Model) GetSelectedItems() []string {
 			}
 		}
 
-		// 如果无法比较ID，则按字符串排序
-		return selected[i] < selected[j]
+		return si < sj
 	})
 
 	return selected
@@ -715,7 +735,7 @@ func (m *Model) GetSearchChan() <-chan string {
 	return m.SearchChan
 }
 
-func (m *Model) GetSelectChan() <-chan []string {
+func (m *Model) GetSelectChan() <-chan []*model.Live2dAsset {
 	return m.SelectChan
 }
 

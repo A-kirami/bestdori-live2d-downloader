@@ -263,9 +263,11 @@ func (a *App) updateCharaCostumes(id int, firstName string, displayName string) 
 	// 清除之前的错误消息
 	a.tuiModel.ClearError()
 
-	var costumeNames []string
+	var costumeAssets []*model.Live2dAsset
 	for _, live2d := range costumes {
-		costumeNames = append(costumeNames, live2d.String())
+		// create a copy to take address
+		aCopy := live2d
+		costumeAssets = append(costumeAssets, &aCopy)
 	}
 
 	// 更新列表
@@ -279,7 +281,7 @@ func (a *App) updateCharaCostumes(id int, firstName string, displayName string) 
 		Str("charaName", firstName).
 		Int("costumesCount", len(costumes)).
 		Msg("找到角色服装列表")
-	a.program.Send(tui.UpdateListMsg{Items: costumeNames})
+	a.program.Send(tui.UpdateListMsg{Items: costumeAssets})
 
 	return true
 }
@@ -419,17 +421,17 @@ func (a *App) handleDirectDownload(input string) bool {
 	a.tuiModel.DownloadList.Title = "下载进度"
 
 	// TODO: 可选 Bestdori 服务器
-	// 设置默认服务器
-	for i, costume := range modelNames {
-		model := model.Live2dAsset{
+	// 设置默认服务器并构建资产对象列表
+	assets := make([]*model.Live2dAsset, 0, len(modelNames))
+	for _, costume := range modelNames {
+		assets = append(assets, &model.Live2dAsset{
 			Server:  a.apiClient.GetDefaultAssetServer(),
 			Costume: costume,
-		}
-		modelNames[i] = model.String()
+		})
 	}
 
 	// 使用批量下载功能处理多个模型
-	return a.handleBatchDownload(modelNames)
+	return a.handleBatchDownload(assets)
 }
 
 // handleDownload 处理下载请求.
@@ -454,22 +456,24 @@ func (a *App) handleDownload(input string) bool {
 
 // downloadModel 下载单个模型.
 func (a *App) downloadModel(
-	costume string,
+	asset *model.Live2dAsset,
 	errChan chan error,
 	completed map[string]bool,
 	progressUpdated chan struct{},
 ) {
-	// 从格式化字符串读取模型信息
-	model, _ := model.Parse(costume) // 错误会在 downloadLive2d 抛出
+	name := ""
+	if asset != nil {
+		name = asset.String()
+	}
 
-	if err := a.downloadLive2d(model); err != nil {
+	if err := a.downloadLive2d(asset); err != nil {
 		if err.Error() == ErrDownloadCancelled {
 			errChan <- err
 			return
 		}
-		log.DefaultLogger.Error().Str("model", costume).Err(err).Msg("下载失败")
+		log.DefaultLogger.Error().Str("model", name).Err(err).Msg("下载失败")
 	} else {
-		completed[costume] = true
+		completed[name] = true
 	}
 	// 无论成功还是失败，都更新总体进度
 	a.tuiModel.UpdateTotalProgress()
@@ -481,7 +485,7 @@ func (a *App) downloadModel(
 }
 
 // handleBatchDownload 处理批量下载请求.
-func (a *App) handleBatchDownload(selectedItems []string) bool {
+func (a *App) handleBatchDownload(selectedItems []*model.Live2dAsset) bool {
 	if len(selectedItems) == 0 {
 		return true
 	}
@@ -496,7 +500,7 @@ func (a *App) handleBatchDownload(selectedItems []string) bool {
 	modelSem := make(chan struct{}, config.Get().MaxConcurrentModels)
 	progressUpdated := make(chan struct{}, 1) // 用于通知进度已更新
 
-	for _, costume := range selectedItems {
+	for _, asset := range selectedItems {
 		select {
 		case <-a.ctx.Done():
 			a.handleCancelledDownloads(selectedItems, completed)
@@ -510,10 +514,10 @@ func (a *App) handleBatchDownload(selectedItems []string) bool {
 			continue
 		default:
 			modelSem <- struct{}{}
-			go func(costume string) {
+			go func(asset *model.Live2dAsset) {
 				defer func() { <-modelSem }()
-				a.downloadModel(costume, errChan, completed, progressUpdated)
-			}(costume)
+				a.downloadModel(asset, errChan, completed, progressUpdated)
+			}(asset)
 		}
 	}
 
@@ -525,10 +529,14 @@ func (a *App) handleBatchDownload(selectedItems []string) bool {
 }
 
 // handleCancelledDownloads 处理已取消的下载.
-func (a *App) handleCancelledDownloads(selectedItems []string, completed map[string]bool) {
-	for _, item := range selectedItems {
-		if !completed[item] {
-			log.DefaultLogger.Error().Str("model", item).Msg("下载已取消")
+func (a *App) handleCancelledDownloads(selectedItems []*model.Live2dAsset, completed map[string]bool) {
+	for _, asset := range selectedItems {
+		name := ""
+		if asset != nil {
+			name = asset.String()
+		}
+		if !completed[name] {
+			log.DefaultLogger.Error().Str("model", name).Msg("下载已取消")
 			// 注意：总体进度已经在downloadModel中更新，这里不需要重复更新
 		}
 	}

@@ -86,22 +86,6 @@ func (l *Live2dAsset) String() string {
 	return fmt.Sprintf("%s (%s)", l.Costume, l.Server)
 }
 
-func Parse(s string) (*Live2dAsset, error) {
-	l := strings.LastIndex(s, "(")
-	r := strings.LastIndex(s, ")")
-
-	if l == -1 || r == -1 || l >= r {
-		return nil, fmt.Errorf("错误的模型名称: %s", s)
-	}
-
-	obj := Live2dAsset{
-		Server:  strings.TrimSpace(s[l+1 : r]),
-		Costume: strings.TrimSpace(s[:l]),
-	}
-
-	return &obj, nil
-}
-
 // MatchChara 表示匹配的角色信息
 // 用于存储角色搜索的结果.
 type MatchChara struct {
