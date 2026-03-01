@@ -4,6 +4,7 @@ package model
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -84,6 +85,31 @@ type Live2dAsset struct {
 
 func (l *Live2dAsset) String() string {
 	return fmt.Sprintf("%s (%s)", l.Costume, l.Server)
+}
+
+// CostumeLess 比较两个 Live2dAsset 的排序优先级 (用于排序).
+func CostumeLess(a, b Live2dAsset) bool {
+	aName := a.Costume
+	bName := b.Costume
+
+	// 如果包含 "live_event", 将其排在后面
+	aHasEvent := strings.Contains(aName, "live_event")
+	bHasEvent := strings.Contains(bName, "live_event")
+	if aHasEvent != bHasEvent {
+		return !aHasEvent
+	}
+
+	aParts := strings.Split(aName, "_")
+	bParts := strings.Split(bName, "_")
+	if len(aParts) > 1 && len(bParts) > 1 {
+		aID, aErr := strconv.Atoi(aParts[1])
+		bID, bErr := strconv.Atoi(bParts[1])
+		if aErr == nil && bErr == nil {
+			return aID < bID
+		}
+	}
+
+	return aName < bName
 }
 
 // MatchChara 表示匹配的角色信息

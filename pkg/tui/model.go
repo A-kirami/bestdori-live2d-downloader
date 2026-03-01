@@ -697,38 +697,43 @@ func (m *Model) GetSelectedItems() []*model.Live2dAsset {
 		selected = append(selected, asset)
 	}
 
-	// 对选中的项目进行排序（基于字符串表示）
+	// 对选中的项目进行排序，比较逻辑委托给 selectedLess
 	sort.Slice(selected, func(i, j int) bool {
-		si := ""
-		sj := ""
-		if selected[i] != nil {
-			si = selected[i].String()
-		}
-		if selected[j] != nil {
-			sj = selected[j].String()
-		}
-
-		iParts := strings.Split(si, "_")
-		jParts := strings.Split(sj, "_")
-
-		iHasEvent := strings.Contains(si, "live_event")
-		jHasEvent := strings.Contains(sj, "live_event")
-		if iHasEvent != jHasEvent {
-			return !iHasEvent
-		}
-
-		if len(iParts) > 1 && len(jParts) > 1 {
-			iID, iErr := strconv.Atoi(iParts[1])
-			jID, jErr := strconv.Atoi(jParts[1])
-			if iErr == nil && jErr == nil {
-				return iID < jID
-			}
-		}
-
-		return si < sj
+		return selectedLess(selected[i], selected[j])
 	})
 
 	return selected
+}
+
+// selectedLess 比较两个已选项目的排序顺序.
+func selectedLess(a, b *model.Live2dAsset) bool {
+	sa := ""
+	sb := ""
+	if a != nil {
+		sa = a.String()
+	}
+	if b != nil {
+		sb = b.String()
+	}
+
+	aParts := strings.Split(sa, "_")
+	bParts := strings.Split(sb, "_")
+
+	aHasEvent := strings.Contains(sa, "live_event")
+	bHasEvent := strings.Contains(sb, "live_event")
+	if aHasEvent != bHasEvent {
+		return !aHasEvent
+	}
+
+	if len(aParts) > 1 && len(bParts) > 1 {
+		aID, aErr := strconv.Atoi(aParts[1])
+		bID, bErr := strconv.Atoi(bParts[1])
+		if aErr == nil && bErr == nil {
+			return aID < bID
+		}
+	}
+
+	return sa < sb
 }
 
 func (m *Model) GetSearchChan() <-chan string {

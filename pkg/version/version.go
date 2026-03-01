@@ -1,5 +1,5 @@
 // Package version 提供了版本信息
-package version
+package version //nolint:revive // package name 'version' intentionally used for project version info
 
 import "fmt"
 

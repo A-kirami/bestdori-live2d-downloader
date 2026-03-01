@@ -1,5 +1,5 @@
 // Package log 提供日志功能
-package log
+package log //nolint:revive // package name 'log' intentionally matches functionality; avoids extra nesting
 
 import (
 	"fmt"

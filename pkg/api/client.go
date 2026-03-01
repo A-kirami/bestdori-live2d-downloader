@@ -1,6 +1,6 @@
 // Package api 提供了与 Bestdori API 交互的功能
 // 包括获取角色信息、Live2D 模型数据等功能
-package api
+package api //nolint:revive // package name 'api' reflects the import path and package responsibility
 
 import (
 	"context"
@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -103,6 +102,7 @@ func (c *Client) FetchData(ctx context.Context, url string, cache string) (map[s
 		return nil, fmt.Errorf("创建请求失败: %w", err)
 	}
 
+	// #nosec G704 -- 请求的 URL 源自配置或受控输入，已在调用方或配置中验证
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		log.DefaultLogger.Error().Str("url", url).Err(err).Msg("获取数据失败")
@@ -214,7 +214,7 @@ func (c *Client) getLive2dAssets(ctx context.Context) (map[string]string, error)
 		}
 
 		for costume := range newLive2dAssets {
-			if _, o := live2dAssets[costume]; !o {
+			if _, exists := live2dAssets[costume]; !exists {
 				live2dAssets[costume] = tag
 			}
 		}
@@ -260,31 +260,9 @@ func (c *Client) GetCharaCostumes(ctx context.Context, charaID int) ([]model.Liv
 		}
 	}
 
-	// 对服装列表进行排序
+	// 对服装列表进行排序 (使用 model 包中的比较函数)
 	sort.Slice(costumes, func(i, j int) bool {
-		// 提取服装ID（模型名称中的数字部分）
-		iParts := strings.Split(costumes[i].Costume, "_")
-		jParts := strings.Split(costumes[j].Costume, "_")
-
-		// 如果包含"live_event"，将其排在后面
-		iHasEvent := strings.Contains(costumes[i].Costume, "live_event")
-		jHasEvent := strings.Contains(costumes[j].Costume, "live_event")
-
-		if iHasEvent != jHasEvent {
-			return !iHasEvent
-		}
-
-		// 比较服装ID
-		if len(iParts) > 1 && len(jParts) > 1 {
-			iID, iErr := strconv.Atoi(iParts[1])
-			jID, jErr := strconv.Atoi(jParts[1])
-			if iErr == nil && jErr == nil {
-				return iID < jID
-			}
-		}
-
-		// 如果无法比较ID，则按字符串排序
-		return costumes[i].Costume < costumes[j].Costume
+		return model.CostumeLess(costumes[i], costumes[j])
 	})
 
 	return costumes, nil

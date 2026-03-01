@@ -206,6 +206,7 @@ func (d *Downloader) DownloadBundleFile(
 	}
 
 	// 执行请求
+	// #nosec G704 -- 请求的 URL 源自受控的服务器配置或构建逻辑，已在调用方/配置中受限
 	resp, err := d.httpClient.Do(req)
 	if err != nil {
 		log.DefaultLogger.Error().Str("url", req.URL.String()).Err(err).Msg("下载文件失败")
