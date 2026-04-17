@@ -320,3 +320,18 @@ func TestGetLive2dAssetReturnsSourceServer(t *testing.T) {
 	require.Equal(t, "cn", asset.Server)
 	require.Equal(t, "037_casual-2023", asset.Costume)
 }
+
+func TestGetDefaultAssetServerHonorsConfigDefault(t *testing.T) {
+	config.Init()
+	cfg := config.Get()
+	cfg.DefaultAssetServer = "cn"
+	cfg.ServerTags = []string{"jp", "cn"}
+	cfg.AssetServers = map[string]config.AssetServerConfig{
+		"jp": config.DefaultAssetServerConfigTemplate("jp"),
+		"cn": config.DefaultAssetServerConfigTemplate("cn"),
+	}
+
+	client := api.NewClient()
+
+	require.Equal(t, "cn", client.GetDefaultAssetServer())
+}

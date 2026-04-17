@@ -26,6 +26,7 @@ type Client struct {
 	charaCachePath string                              // 角色信息缓存路径
 	cacheDuration  time.Duration                       // 缓存过期时间
 	charaRosterURL string                              // 角色信息 API URL
+	defaultServer  string                              // 默认 Bestdori 资源服务器标签
 	serverTags     []string                            // Bestdori 资源服务器标签 (有序)
 	assetServers   map[string]config.AssetServerConfig // Bestdori 资源服务器配置
 	httpClient     *http.Client                        // HTTP 客户端
@@ -42,6 +43,7 @@ func NewClient() *Client {
 		charaCachePath: cfg.CharaCachePath,
 		cacheDuration:  cfg.CacheDuration,
 		charaRosterURL: cfg.CharaRosterURL,
+		defaultServer:  cfg.DefaultAssetServer,
 		serverTags:     cfg.ServerTags,
 		assetServers:   cfg.AssetServers,
 		httpClient: &http.Client{
@@ -394,5 +396,9 @@ func (c *Client) SetUseCharaCache(use bool) {
 // 返回:
 //   - string: 默认 Bestdori 服务器标签
 func (c *Client) GetDefaultAssetServer() string {
+	if c.defaultServer != "" {
+		return c.defaultServer
+	}
+
 	return c.serverTags[0]
 }
