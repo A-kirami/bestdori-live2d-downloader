@@ -87,10 +87,21 @@ func (l *Live2dAsset) String() string {
 	return fmt.Sprintf("%s (%s)", l.Costume, l.Server)
 }
 
+func sortableCostumeName(name string) string {
+	parts := strings.Split(name, "_")
+	if len(parts) >= 3 && parts[0] == "bili" {
+		if _, err := strconv.Atoi(parts[1]); err == nil {
+			return strings.Join(parts[1:], "_")
+		}
+	}
+
+	return name
+}
+
 // CostumeLess 比较两个 Live2dAsset 的排序优先级 (用于排序).
 func CostumeLess(a, b Live2dAsset) bool {
-	aName := a.Costume
-	bName := b.Costume
+	aName := sortableCostumeName(a.Costume)
+	bName := sortableCostumeName(b.Costume)
 
 	// 如果包含 "live_event", 将其排在后面
 	aHasEvent := strings.Contains(aName, "live_event")

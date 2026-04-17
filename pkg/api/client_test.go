@@ -317,8 +317,8 @@ func TestGetCharaCostumesIncludesBiliSpecialCostumes(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Len(t, costumes, 2)
-	require.Equal(t, "001_school", costumes[0].Costume)
-	require.Equal(t, "bili_001_collabo_r", costumes[1].Costume)
+	require.Equal(t, "bili_001_collabo_r", costumes[0].Costume)
+	require.Equal(t, "001_school", costumes[1].Costume)
 }
 
 func TestGetCharaCostumesIgnoresUnsupportedBilPrefix(t *testing.T) {
