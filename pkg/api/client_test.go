@@ -304,6 +304,38 @@ func TestGetCharaCostumesMatchesLeadingCharaIDOnly(t *testing.T) {
 	require.Equal(t, "102_school", costumes[0].Costume)
 }
 
+func TestGetCharaCostumesIncludesBiliSpecialCostumes(t *testing.T) {
+	client := setupLive2dAssetsTestClient(t, map[string]map[string]any{
+		"jp": {
+			"001_school":          map[string]any{},
+			"bili_001_collabo_r":  map[string]any{},
+			"bili_002_collabo_ssr": map[string]any{},
+		},
+	})
+
+	costumes, err := client.GetCharaCostumes(context.Background(), 1)
+
+	require.NoError(t, err)
+	require.Len(t, costumes, 2)
+	require.Equal(t, "001_school", costumes[0].Costume)
+	require.Equal(t, "bili_001_collabo_r", costumes[1].Costume)
+}
+
+func TestGetCharaCostumesIgnoresUnsupportedBilPrefix(t *testing.T) {
+	client := setupLive2dAssetsTestClient(t, map[string]map[string]any{
+		"jp": {
+			"001_school":          map[string]any{},
+			"bil_001_collabo_ssr": map[string]any{},
+		},
+	})
+
+	costumes, err := client.GetCharaCostumes(context.Background(), 1)
+
+	require.NoError(t, err)
+	require.Len(t, costumes, 1)
+	require.Equal(t, "001_school", costumes[0].Costume)
+}
+
 func TestGetLive2dAssetReturnsSourceServer(t *testing.T) {
 	client := setupLive2dAssetsTestClient(t, map[string]map[string]any{
 		"jp": {},

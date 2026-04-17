@@ -231,7 +231,12 @@ func isCharaCostume(costume string, charaID int) bool {
 		return false
 	}
 
-	return parts[0] == fmt.Sprintf("%03d", charaID)
+	idStr := fmt.Sprintf("%03d", charaID)
+	if parts[0] == idStr {
+		return true
+	}
+
+	return len(parts) >= 3 && parts[0] == "bili" && parts[1] == idStr
 }
 
 // GetCharaCostumes 获取指定角色的所有 Live2D 服装列表
