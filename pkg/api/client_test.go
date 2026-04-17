@@ -288,3 +288,18 @@ func TestGetCharaCostumesIncludesTwoPartCostumes(t *testing.T) {
 	require.Equal(t, "001_arbeit", costumes[0].Costume)
 	require.Equal(t, "001_live_default", costumes[1].Costume)
 }
+
+func TestGetCharaCostumesMatchesLeadingCharaIDOnly(t *testing.T) {
+	client := setupLive2dAssetsTestClient(t, map[string]map[string]any{
+		"jp": {
+			"001_event_102_story_01": map[string]any{},
+			"102_school":             map[string]any{},
+		},
+	})
+
+	costumes, err := client.GetCharaCostumes(context.Background(), 102)
+
+	require.NoError(t, err)
+	require.Len(t, costumes, 1)
+	require.Equal(t, "102_school", costumes[0].Costume)
+}

@@ -223,6 +223,15 @@ func (c *Client) getLive2dAssets(ctx context.Context) (map[string]string, error)
 	return live2dAssets, nil
 }
 
+func isCharaCostume(costume string, charaID int) bool {
+	parts := strings.Split(costume, "_")
+	if len(parts) < 2 {
+		return false
+	}
+
+	return parts[0] == fmt.Sprintf("%03d", charaID)
+}
+
 // GetCharaCostumes 获取指定角色的所有 Live2D 服装列表
 // 参数:
 //   - ctx: 上下文
@@ -239,20 +248,7 @@ func (c *Client) GetCharaCostumes(ctx context.Context, charaID int) ([]model.Liv
 
 	var costumes []model.Live2dAsset
 	for costume, server := range live2dAssets {
-		// 仅在名称按 '_' 分段且存在完整的 %03d 段且该段不是最后一段时视为存在
-		exist := false
-		parts := strings.Split(costume, "_")
-		if len(parts) >= 2 {
-			idStr := fmt.Sprintf("%03d", charaID)
-			for idx, p := range parts {
-				if p == idStr && idx < len(parts)-1 {
-					exist = true
-					break
-				}
-			}
-		}
-
-		if exist && !strings.HasSuffix(costume, "general") {
+		if isCharaCostume(costume, charaID) && !strings.HasSuffix(costume, "general") {
 			costumes = append(costumes, model.Live2dAsset{
 				Server:  server,
 				Costume: costume,
