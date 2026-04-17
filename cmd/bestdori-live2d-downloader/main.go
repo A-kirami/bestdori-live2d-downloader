@@ -386,6 +386,19 @@ func (a *App) resolveDirectDownloadAssets(modelNames []string) ([]*model.Live2dA
 	return assets, invalidModels, nil
 }
 
+func (a *App) shouldHandleAsDirectDownload(input string) (bool, error) {
+	if input == "" {
+		return false, nil
+	}
+
+	_, exists, err := a.apiClient.GetLive2dAsset(a.ctx, input)
+	if err != nil {
+		return false, fmt.Errorf("验证模型失败: %w", err)
+	}
+
+	return exists, nil
+}
+
 // handleDirectDownload 处理直接下载请求.
 func (a *App) handleDirectDownload(input string) bool {
 	log.DefaultLogger.Info().Str("input", input).Msg("开始直接下载Live2D")
@@ -444,12 +457,16 @@ func (a *App) handleDownload(input string) bool {
 		return a.handleCharaIDSearch(input)
 	}
 
-	// 先尝试作为 Live2D 模型名称处理
-	parts := strings.SplitN(input, "_", SplitPartsCount)
-	if len(parts) >= 2 {
-		if _, err := strconv.Atoi(parts[0]); err == nil {
-			return a.handleDirectDownload(input)
-		}
+	// 优先按完整模型名称处理，再回退到角色搜索
+	direct, err := a.shouldHandleAsDirectDownload(input)
+	if err != nil {
+		log.DefaultLogger.Error().Str("input", input).Err(err).Msg("验证模型失败")
+		a.tuiModel.SetError(err.Error())
+		a.tuiModel.State = StateInput
+		return true
+	}
+	if direct {
+		return a.handleDirectDownload(input)
 	}
 
 	// 如果不是模型名称，则尝试角色搜索

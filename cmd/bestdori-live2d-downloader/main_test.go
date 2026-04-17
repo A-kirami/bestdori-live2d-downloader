@@ -84,3 +84,54 @@ func TestResolveDirectDownloadAssetsUsesResolvedServer(t *testing.T) {
 	require.Equal(t, "cn", assets[0].Server)
 	require.Equal(t, "037_casual-2023", assets[0].Costume)
 }
+
+func TestShouldHandleAsDirectDownloadSupportsBiliSpecialModels(t *testing.T) {
+	client := setupDirectDownloadTestClient(t, map[string]map[string]any{
+		"jp": {
+			"bili_001_collabo_r": map[string]any{},
+		},
+	})
+	app := &App{
+		ctx:       context.Background(),
+		apiClient: client,
+	}
+
+	direct, err := app.shouldHandleAsDirectDownload("bili_001_collabo_r")
+
+	require.NoError(t, err)
+	require.True(t, direct)
+}
+
+func TestShouldHandleAsDirectDownloadSupportsRegularModelNames(t *testing.T) {
+	client := setupDirectDownloadTestClient(t, map[string]map[string]any{
+		"jp": {
+			"037_casual-2023": map[string]any{},
+		},
+	})
+	app := &App{
+		ctx:       context.Background(),
+		apiClient: client,
+	}
+
+	direct, err := app.shouldHandleAsDirectDownload("037_casual-2023")
+
+	require.NoError(t, err)
+	require.True(t, direct)
+}
+
+func TestShouldHandleAsDirectDownloadFallsBackForPlainText(t *testing.T) {
+	client := setupDirectDownloadTestClient(t, map[string]map[string]any{
+		"jp": {
+			"037_casual-2023": map[string]any{},
+		},
+	})
+	app := &App{
+		ctx:       context.Background(),
+		apiClient: client,
+	}
+
+	direct, err := app.shouldHandleAsDirectDownload("kasumi")
+
+	require.NoError(t, err)
+	require.False(t, direct)
+}
