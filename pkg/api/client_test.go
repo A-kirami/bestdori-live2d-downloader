@@ -2,7 +2,10 @@ package api_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,6 +15,51 @@ import (
 	"github.com/A-kirami/bestdori-live2d-downloader/pkg/log"
 	"github.com/stretchr/testify/require"
 )
+
+func setupLive2dAssetsTestClient(
+	t *testing.T,
+	assetServers map[string]map[string]any,
+) *api.Client {
+	t.Helper()
+
+	config.Init()
+	cfg := config.Get()
+	cfg.ServerTags = make([]string, 0, len(assetServers))
+	cfg.AssetServers = make(map[string]config.AssetServerConfig, len(assetServers))
+
+	mux := http.NewServeMux()
+	for tag, costumes := range assetServers {
+		cfg.ServerTags = append(cfg.ServerTags, tag)
+		cfg.AssetServers[tag] = config.AssetServerConfig{
+			BaseAssetsURL:  "https://example.invalid/assets/" + tag,
+			AssetsIndexURL: "http://example.invalid/" + tag + "/assets/_info.json",
+		}
+
+		response := map[string]any{
+			"live2d": map[string]any{
+				"chara": costumes,
+			},
+		}
+
+		path := "/" + tag + "/assets/_info.json"
+		mux.HandleFunc(path, func(w http.ResponseWriter, _ *http.Request) {
+			require.NoError(t, json.NewEncoder(w).Encode(response))
+		})
+	}
+
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+
+	for tag, serverCfg := range cfg.AssetServers {
+		serverCfg.AssetsIndexURL = server.URL + "/" + tag + "/assets/_info.json"
+		cfg.AssetServers[tag] = serverCfg
+	}
+
+	client := api.NewClient()
+	client.SetUseCharaCache(false)
+	client.SetCharaCachePath(t.TempDir())
+	return client
+}
 
 // setupTest 设置测试环境.
 func setupTest(t *testing.T) {
@@ -222,4 +270,21 @@ func TestValidateLive2dModel(t *testing.T) {
 			require.Equal(t, tt.wantExists, exists, "ValidateLive2dModel() should return correct existence status")
 		})
 	}
+}
+
+func TestGetCharaCostumesIncludesTwoPartCostumes(t *testing.T) {
+	client := setupLive2dAssetsTestClient(t, map[string]map[string]any{
+		"jp": {
+			"001_arbeit":      map[string]any{},
+			"001_live_default": map[string]any{},
+			"002_cafe":        map[string]any{},
+		},
+	})
+
+	costumes, err := client.GetCharaCostumes(context.Background(), 1)
+
+	require.NoError(t, err)
+	require.Len(t, costumes, 2)
+	require.Equal(t, "001_arbeit", costumes[0].Costume)
+	require.Equal(t, "001_live_default", costumes[1].Costume)
 }

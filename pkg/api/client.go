@@ -242,7 +242,7 @@ func (c *Client) GetCharaCostumes(ctx context.Context, charaID int) ([]model.Liv
 		// 仅在名称按 '_' 分段且存在完整的 %03d 段且该段不是最后一段时视为存在
 		exist := false
 		parts := strings.Split(costume, "_")
-		if len(parts) >= 3 {
+		if len(parts) >= 2 {
 			idStr := fmt.Sprintf("%03d", charaID)
 			for idx, p := range parts {
 				if p == idStr && idx < len(parts)-1 {
