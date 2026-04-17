@@ -1,6 +1,6 @@
 // Package api 提供了与 Bestdori API 交互的功能
 // 包括获取角色信息、Live2D 模型数据等功能
-package api //nolint:revive // package name 'api' reflects the import path and package responsibility
+package api
 
 import (
 	"context"

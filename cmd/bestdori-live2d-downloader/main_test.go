@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 
 	"github.com/A-kirami/bestdori-live2d-downloader/pkg/api"
@@ -22,13 +21,16 @@ func setupDirectDownloadTestClient(
 
 	config.Init()
 	cfg := config.Get()
-	logDir, err := os.MkdirTemp("", "bestdori-main-test-logs-*")
-	require.NoError(t, err)
-	cfg.LogPath = logDir
+	cfg.LogPath = t.TempDir()
 	cfg.ServerTags = make([]string, 0, len(assetServers))
 	cfg.AssetServers = make(map[string]config.AssetServerConfig, len(assetServers))
-	_, err = log.New(cfg.LogPath)
+	logger, err := log.New(cfg.LogPath)
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		if closeErr := logger.Close(); closeErr != nil {
+			t.Errorf("close logger: %v", closeErr)
+		}
+	})
 
 	mux := http.NewServeMux()
 	for tag, costumes := range assetServers {
@@ -46,7 +48,9 @@ func setupDirectDownloadTestClient(
 
 		path := "/" + tag + "/assets/_info.json"
 		mux.HandleFunc(path, func(w http.ResponseWriter, _ *http.Request) {
-			require.NoError(t, json.NewEncoder(w).Encode(response))
+			if encodeErr := json.NewEncoder(w).Encode(response); encodeErr != nil {
+				t.Errorf("encode %s response: %v", path, encodeErr)
+			}
 		})
 	}
 

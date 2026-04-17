@@ -1,8 +1,9 @@
 // Package log 提供日志功能
-package log //nolint:revive // package name 'log' intentionally matches functionality; avoids extra nesting
+package log
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -19,6 +20,7 @@ var (
 // Logger 提供日志功能.
 type Logger struct {
 	logger zerolog.Logger
+	writer io.Closer
 }
 
 // New 创建一个新的日志实例.
@@ -40,8 +42,20 @@ func New(logPath string) (*Logger, error) {
 
 	// 配置日志输出
 	logger := zerolog.New(logFile).With().Timestamp().Logger()
-	DefaultLogger = &Logger{logger: logger}
+	DefaultLogger = &Logger{
+		logger: logger,
+		writer: logFile,
+	}
 	return DefaultLogger, nil
+}
+
+// Close 关闭日志输出.
+func (l *Logger) Close() error {
+	if l == nil || l.writer == nil {
+		return nil
+	}
+
+	return l.writer.Close()
 }
 
 // Error 记录错误日志.

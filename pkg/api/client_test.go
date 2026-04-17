@@ -43,7 +43,9 @@ func setupLive2dAssetsTestClient(
 
 		path := "/" + tag + "/assets/_info.json"
 		mux.HandleFunc(path, func(w http.ResponseWriter, _ *http.Request) {
-			require.NoError(t, json.NewEncoder(w).Encode(response))
+			if err := json.NewEncoder(w).Encode(response); err != nil {
+				t.Errorf("encode %s response: %v", path, err)
+			}
 		})
 	}
 
@@ -275,9 +277,9 @@ func TestValidateLive2dModel(t *testing.T) {
 func TestGetCharaCostumesIncludesTwoPartCostumes(t *testing.T) {
 	client := setupLive2dAssetsTestClient(t, map[string]map[string]any{
 		"jp": {
-			"001_arbeit":      map[string]any{},
+			"001_arbeit":       map[string]any{},
 			"001_live_default": map[string]any{},
-			"002_cafe":        map[string]any{},
+			"002_cafe":         map[string]any{},
 		},
 	})
 
@@ -307,8 +309,8 @@ func TestGetCharaCostumesMatchesLeadingCharaIDOnly(t *testing.T) {
 func TestGetCharaCostumesIncludesBiliSpecialCostumes(t *testing.T) {
 	client := setupLive2dAssetsTestClient(t, map[string]map[string]any{
 		"jp": {
-			"001_school":          map[string]any{},
-			"bili_001_collabo_r":  map[string]any{},
+			"001_school":           map[string]any{},
+			"bili_001_collabo_r":   map[string]any{},
 			"bili_002_collabo_ssr": map[string]any{},
 		},
 	})

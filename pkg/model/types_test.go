@@ -1,14 +1,15 @@
-package model
+package model_test
 
 import (
 	"sort"
 	"testing"
 
+	"github.com/A-kirami/bestdori-live2d-downloader/pkg/model"
 	"github.com/stretchr/testify/require"
 )
 
 func TestCostumeLessTreatsBiliPrefixAsSameCharaSeries(t *testing.T) {
-	costumes := []Live2dAsset{
+	costumes := []model.Live2dAsset{
 		{Server: "jp", Costume: "016_cafe"},
 		{Server: "cn", Costume: "bili_016_collabo_ssr"},
 		{Server: "jp", Costume: "016_live_event_08_ssr"},
@@ -16,7 +17,7 @@ func TestCostumeLessTreatsBiliPrefixAsSameCharaSeries(t *testing.T) {
 	}
 
 	sort.Slice(costumes, func(i, j int) bool {
-		return CostumeLess(costumes[i], costumes[j])
+		return model.CostumeLess(costumes[i], costumes[j])
 	})
 
 	require.Equal(t, []string{
