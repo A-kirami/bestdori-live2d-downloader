@@ -367,6 +367,25 @@ func (a *App) handleCharaSearch(input string) bool {
 	return a.updateCharaCostumes(matchChara.ID, matchChara.Name, displayName)
 }
 
+func (a *App) resolveDirectDownloadAssets(modelNames []string) ([]*model.Live2dAsset, []string, error) {
+	assets := make([]*model.Live2dAsset, 0, len(modelNames))
+	invalidModels := make([]string, 0)
+
+	for _, name := range modelNames {
+		asset, exists, err := a.apiClient.GetLive2dAsset(a.ctx, name)
+		if err != nil {
+			return nil, nil, fmt.Errorf("验证模型失败: %w", err)
+		}
+		if !exists {
+			invalidModels = append(invalidModels, name)
+			continue
+		}
+		assets = append(assets, asset)
+	}
+
+	return assets, invalidModels, nil
+}
+
 // handleDirectDownload 处理直接下载请求.
 func (a *App) handleDirectDownload(input string) bool {
 	log.DefaultLogger.Info().Str("input", input).Msg("开始直接下载Live2D")
@@ -393,19 +412,12 @@ func (a *App) handleDirectDownload(input string) bool {
 		return true
 	}
 
-	// 验证所有模型是否存在
-	var invalidModels []string
-	for _, name := range modelNames {
-		exists, err := a.apiClient.ValidateLive2dModel(a.ctx, name)
-		if err != nil {
-			log.DefaultLogger.Error().Str("model", name).Err(err).Msg("验证模型失败")
-			a.tuiModel.SetError(fmt.Sprintf("验证模型失败: %v", err))
-			a.tuiModel.State = StateInput
-			return true
-		}
-		if !exists {
-			invalidModels = append(invalidModels, name)
-		}
+	assets, invalidModels, err := a.resolveDirectDownloadAssets(modelNames)
+	if err != nil {
+		log.DefaultLogger.Error().Strs("models", modelNames).Err(err).Msg("验证模型失败")
+		a.tuiModel.SetError(err.Error())
+		a.tuiModel.State = StateInput
+		return true
 	}
 
 	// 如果有无效的模型，显示错误信息
@@ -419,16 +431,6 @@ func (a *App) handleDirectDownload(input string) bool {
 
 	a.tuiModel.State = "downloading"
 	a.tuiModel.DownloadList.Title = "下载进度"
-
-	// TODO: 可选 Bestdori 服务器
-	// 设置默认服务器并构建资产对象列表
-	assets := make([]*model.Live2dAsset, 0, len(modelNames))
-	for _, costume := range modelNames {
-		assets = append(assets, &model.Live2dAsset{
-			Server:  a.apiClient.GetDefaultAssetServer(),
-			Costume: costume,
-		})
-	}
 
 	// 使用批量下载功能处理多个模型
 	return a.handleBatchDownload(assets)

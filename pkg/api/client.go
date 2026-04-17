@@ -330,6 +330,35 @@ func (c *Client) GetLive2dData(
 	return &s, &buildData, nil
 }
 
+// GetLive2dAsset 获取指定模型所属的资源信息
+// 参数:
+//   - ctx: 上下文
+//   - live2dName: Live2D 模型名称
+//
+// 返回:
+//   - *model.Live2dAsset: 模型资源信息
+//   - bool: 模型是否存在
+//   - error: 错误信息
+func (c *Client) GetLive2dAsset(
+	ctx context.Context,
+	live2dName string,
+) (*model.Live2dAsset, bool, error) {
+	live2dAssets, err := c.getLive2dAssets(ctx)
+	if err != nil {
+		return nil, false, fmt.Errorf("获取资源索引失败: %w", err)
+	}
+
+	server, exists := live2dAssets[live2dName]
+	if !exists {
+		return nil, false, nil
+	}
+
+	return &model.Live2dAsset{
+		Server:  server,
+		Costume: live2dName,
+	}, true, nil
+}
+
 // ValidateLive2dModel 验证指定的 Live2D 模型是否存在
 // 参数:
 //   - ctx: 上下文
@@ -339,13 +368,11 @@ func (c *Client) GetLive2dData(
 //   - bool: 模型是否存在
 //   - error: 错误信息
 func (c *Client) ValidateLive2dModel(ctx context.Context, live2dName string) (bool, error) {
-	live2dAssets, err := c.getLive2dAssets(ctx)
+	_, exists, err := c.GetLive2dAsset(ctx, live2dName)
 	if err != nil {
-		return false, fmt.Errorf("获取资源索引失败: %w", err)
+		return false, err
 	}
 
-	// 检查模型名是否存在于live2dAssets中
-	_, exists := live2dAssets[live2dName]
 	return exists, nil
 }
 

@@ -303,3 +303,20 @@ func TestGetCharaCostumesMatchesLeadingCharaIDOnly(t *testing.T) {
 	require.Len(t, costumes, 1)
 	require.Equal(t, "102_school", costumes[0].Costume)
 }
+
+func TestGetLive2dAssetReturnsSourceServer(t *testing.T) {
+	client := setupLive2dAssetsTestClient(t, map[string]map[string]any{
+		"jp": {},
+		"cn": {
+			"037_casual-2023": map[string]any{},
+		},
+	})
+
+	asset, exists, err := client.GetLive2dAsset(context.Background(), "037_casual-2023")
+
+	require.NoError(t, err)
+	require.True(t, exists)
+	require.NotNil(t, asset)
+	require.Equal(t, "cn", asset.Server)
+	require.Equal(t, "037_casual-2023", asset.Costume)
+}
