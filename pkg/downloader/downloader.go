@@ -230,17 +230,19 @@ func (d *Downloader) DownloadBundleFile(
 	if createErr != nil {
 		return createErr
 	}
-	// defer tempFile.Close() // 手动关闭
 
 	// 写入文件内容
-	writeErr := d.writeFileContent(tempFile, resp, tempFilePath)
-	_ = tempFile.Close()
-	if writeErr != nil {
+	if writeErr := func() error {
+		defer tempFile.Close()
+		return d.writeFileContent(tempFile, resp, tempFilePath)
+	}(); writeErr != nil {
+		_ = os.Remove(tempFilePath)
 		return writeErr
 	}
 
 	// 重命名为目标文件
 	if renameErr := os.Rename(tempFilePath, filePath); renameErr != nil {
+		_ = os.Remove(tempFilePath)
 		return renameErr
 	}
 
