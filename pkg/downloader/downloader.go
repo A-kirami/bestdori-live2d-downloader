@@ -234,7 +234,7 @@ func (d *Downloader) DownloadBundleFile(
 
 	// 写入文件内容
 	writeErr := d.writeFileContent(tempFile, resp, tempFilePath)
-	tempFile.Close()
+	_ = tempFile.Close()
 	if writeErr != nil {
 		return writeErr
 	}
