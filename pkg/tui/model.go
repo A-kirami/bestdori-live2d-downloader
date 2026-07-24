@@ -31,6 +31,8 @@ var (
 	helpStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#626262")).Render // 帮助文本样式
 	//nolint:gochecknoglobals // 使用全局样式常量是必要的，因为需要在不同的 UI 组件中保持一致的样式
 	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FF69B4")) // 标题样式
+	//nolint:gochecknoglobals // 使用全局样式常量是必要的，因为需要在不同的 UI 组件中保持一致的样式
+	errorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000")).Render // 错误信息样式
 )
 
 // 界面常量.
@@ -853,6 +855,10 @@ func (m *Model) View() string {
 		m.CharaList.SetShowPagination(false)
 		m.CharaList.SetShowHelp(false)
 		s.WriteString(m.CharaList.View())
+		if m.ErrorMessage != "" {
+			s.WriteString("\n\n")
+			s.WriteString(errorStyle(m.ErrorMessage))
+		}
 		s.WriteString("\n\n")
 		s.WriteString(helpStyle("上下键选择，Enter 确认，Ctrl+C 退出"))
 
@@ -911,7 +917,7 @@ func (m *Model) View() string {
 		m.DownloadList.SetShowHelp(false)
 		s.WriteString(m.DownloadList.View())
 		s.WriteString("\n\n")
-		s.WriteString(helpStyle("Esc 返回角色列表"))
+		s.WriteString(helpStyle("Esc 返回服装列表"))
 	}
 
 	return s.String()
