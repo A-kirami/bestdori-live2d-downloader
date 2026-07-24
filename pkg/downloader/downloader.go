@@ -799,6 +799,14 @@ func IsModelComplete(modelPath string, buildData *model.BuildData) bool {
 		return false
 	}
 
+	// 检查 physics.json（仅当存在物理数据时）
+	if buildData.Physics.FileName != "" {
+		physicsFile := filepath.Join(dataPath, buildData.Physics.FileName)
+		if _, err := os.Stat(physicsFile); os.IsNotExist(err) {
+			return false
+		}
+	}
+
 	return true
 }
 

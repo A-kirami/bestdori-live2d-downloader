@@ -311,9 +311,9 @@ func (a *App) getLive2dPathOriginal(_ string, charaID int, costume string, costu
 // findExistingModelPath 查找已存在的模型目录（支持不同命名模式）
 //
 //nolint:gocognit // 复杂的路径查找逻辑
-func (a *App) findExistingModelPath(live2dName string, currentPath string) (string, bool) {
+func (a *App) findExistingModelPath(live2dName string, currentPath string, buildData *model.BuildData) (string, bool) {
 	// 检查当前路径是否存在完整模型
-	if _, err := os.Stat(filepath.Join(currentPath, "model.json")); err == nil {
+	if downloader.IsModelComplete(currentPath, buildData) {
 		return currentPath, true
 	}
 
@@ -336,7 +336,7 @@ func (a *App) findExistingModelPath(live2dName string, currentPath string) (stri
 	costumeName := sanitizeFilename(a.lookupCostumeName(live2dName, parsed.Costume))
 	chinesePath := filepath.Join(savePath, charaName, costumeName)
 	if chinesePath != currentPath {
-		if _, err := os.Stat(filepath.Join(chinesePath, "model.json")); err == nil {
+		if downloader.IsModelComplete(chinesePath, buildData) {
 			return chinesePath, true
 		}
 	}
@@ -366,7 +366,7 @@ func (a *App) findExistingModelPath(live2dName string, currentPath string) (stri
 					sanitizeFilename(parsed.Costume),
 				)
 				if originalPath != currentPath {
-					if _, statErr := os.Stat(filepath.Join(originalPath, "model.json")); statErr == nil {
+					if downloader.IsModelComplete(originalPath, buildData) {
 						return originalPath, true
 					}
 				}
@@ -377,7 +377,7 @@ func (a *App) findExistingModelPath(live2dName string, currentPath string) (stri
 	// 尝试原始命名路径（使用角色ID）
 	idPath := filepath.Join(savePath, fmt.Sprintf("chara_%03d", parsed.CharaID), sanitizeFilename(parsed.CostumePart))
 	if idPath != currentPath {
-		if _, statErr := os.Stat(filepath.Join(idPath, "model.json")); statErr == nil {
+		if downloader.IsModelComplete(idPath, buildData) {
 			return idPath, true
 		}
 	}
@@ -401,7 +401,7 @@ func (a *App) downloadLive2d(live2d *model.Live2dAsset, displayName string) erro
 	}
 
 	// 检查是否有已存在的完整模型（可能是其他命名模式下的）
-	existingPath, isComplete := a.findExistingModelPath(live2d.Costume, path)
+	existingPath, isComplete := a.findExistingModelPath(live2d.Costume, path, data)
 	if isComplete && existingPath != path {
 		// 模型已存在于其他命名模式下，只需重命名目录
 		log.DefaultLogger.Info().
