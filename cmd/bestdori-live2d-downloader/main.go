@@ -308,19 +308,19 @@ func (a *App) getLive2dPathOriginal(_ string, charaID int, costume string, costu
 	return path, nil
 }
 
-// findExistingModelPath 查找已存在的模型目录（支持不同命名模式）
+// hasCompleteModel 检查当前或其他命名模式下是否已有完整模型.
 //
 //nolint:gocognit // 复杂的路径查找逻辑
-func (a *App) findExistingModelPath(live2dName string, currentPath string, buildData *model.BuildData) (string, bool) {
+func (a *App) hasCompleteModel(live2dName string, currentPath string, buildData *model.BuildData) bool {
 	// 检查当前路径是否存在完整模型
 	if downloader.IsModelComplete(currentPath, buildData) {
-		return currentPath, true
+		return true
 	}
 
 	// 尝试查找其他命名模式下的路径
 	parsed, ok := parseLive2dName(live2dName)
 	if !ok {
-		return "", false
+		return false
 	}
 
 	savePath := config.Get().Live2dSavePath
@@ -337,7 +337,7 @@ func (a *App) findExistingModelPath(live2dName string, currentPath string, build
 	chinesePath := filepath.Join(savePath, charaName, costumeName)
 	if chinesePath != currentPath {
 		if downloader.IsModelComplete(chinesePath, buildData) {
-			return chinesePath, true
+			return true
 		}
 	}
 
@@ -367,7 +367,7 @@ func (a *App) findExistingModelPath(live2dName string, currentPath string, build
 				)
 				if originalPath != currentPath {
 					if downloader.IsModelComplete(originalPath, buildData) {
-						return originalPath, true
+						return true
 					}
 				}
 			}
@@ -378,11 +378,11 @@ func (a *App) findExistingModelPath(live2dName string, currentPath string, build
 	idPath := filepath.Join(savePath, fmt.Sprintf("chara_%03d", parsed.CharaID), sanitizeFilename(parsed.CostumePart))
 	if idPath != currentPath {
 		if downloader.IsModelComplete(idPath, buildData) {
-			return idPath, true
+			return true
 		}
 	}
 
-	return "", false
+	return false
 }
 
 // downloadLive2d 下载指定的 Live2D 模型.
@@ -400,29 +400,8 @@ func (a *App) downloadLive2d(live2d *model.Live2dAsset, displayName string) erro
 		return err
 	}
 
-	// 检查是否有已存在的完整模型（可能是其他命名模式下的）
-	existingPath, isComplete := a.findExistingModelPath(live2d.Costume, path, data)
-	if isComplete && existingPath != path {
-		// 模型已存在于其他命名模式下，只需重命名目录
-		log.DefaultLogger.Info().
-			Str("live2dName", live2d.Costume).
-			Str("oldPath", existingPath).
-			Str("newPath", path).
-			Msg("检测到已存在的模型，重命名目录")
-		if renameErr := downloader.RenameModelDir(existingPath, path); renameErr != nil {
-			log.DefaultLogger.Error().Err(renameErr).Msg("重命名目录失败")
-			return fmt.Errorf("重命名目录失败: %w", renameErr)
-		}
-		log.DefaultLogger.Info().Str("path", path).Msg("目录重命名完成")
-
-		// 重命名完成，更新进度到 100%
-		a.updateProgressComplete(displayName, data)
-		return nil
-	}
-
-	// 检查当前路径是否已完整
-	if isComplete {
-		log.DefaultLogger.Info().Str("path", path).Msg("模型已存在，跳过下载")
+	if a.hasCompleteModel(live2d.Costume, path, data) {
+		log.DefaultLogger.Info().Str("live2dName", live2d.Costume).Msg("模型已存在，跳过下载")
 
 		// 模型已存在，更新进度到 100%
 		a.updateProgressComplete(displayName, data)

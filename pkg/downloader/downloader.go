@@ -809,35 +809,3 @@ func IsModelComplete(modelPath string, buildData *model.BuildData) bool {
 
 	return true
 }
-
-// RenameModelDir 重命名模型目录
-// 参数:
-//   - oldPath: 旧路径
-//   - newPath: 新路径
-//
-// 返回:
-//   - error: 错误信息
-func RenameModelDir(oldPath, newPath string) error {
-	if oldPath == newPath {
-		return nil
-	}
-
-	// 检查旧路径是否存在
-	if _, err := os.Stat(oldPath); os.IsNotExist(err) {
-		return nil
-	}
-
-	// 如果新路径已存在，先删除
-	if _, err := os.Stat(newPath); err == nil {
-		if removeErr := os.RemoveAll(newPath); removeErr != nil {
-			return fmt.Errorf("删除已存在的目标目录失败: %w", removeErr)
-		}
-	}
-
-	// 确保父目录存在
-	if mkdirErr := os.MkdirAll(filepath.Dir(newPath), 0750); mkdirErr != nil {
-		return fmt.Errorf("创建父目录失败: %w", mkdirErr)
-	}
-
-	return os.Rename(oldPath, newPath)
-}

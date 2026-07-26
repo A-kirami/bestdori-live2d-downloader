@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/A-kirami/bestdori-live2d-downloader/pkg/api"
 	"github.com/A-kirami/bestdori-live2d-downloader/pkg/config"
 	"github.com/A-kirami/bestdori-live2d-downloader/pkg/log"
+	"github.com/A-kirami/bestdori-live2d-downloader/pkg/model"
 	"github.com/stretchr/testify/require"
 )
 
@@ -138,4 +141,28 @@ func TestShouldHandleAsDirectDownloadFallsBackForPlainText(t *testing.T) {
 
 	require.NoError(t, err)
 	require.False(t, direct)
+}
+
+func TestHasCompleteModelFindsOtherNamingModeWithoutMovingIt(t *testing.T) {
+	config.Init()
+	savePath := t.TempDir()
+	config.Get().Live2dSavePath = savePath
+
+	chinesePath := filepath.Join(savePath, "户山香澄", "常服")
+	require.NoError(t, os.MkdirAll(filepath.Join(chinesePath, "data"), 0750))
+	require.NoError(t, os.WriteFile(filepath.Join(chinesePath, "data", "model.moc"), []byte("model"), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(chinesePath, "model.json"), []byte("{}"), 0600))
+
+	app := &App{
+		ctx:              context.Background(),
+		charaNames:       map[string]string{"1": "户山香澄"},
+		costumeNames:     map[string]string{"001_casual": "常服"},
+		charaNamesOnce:   true,
+		costumeNamesOnce: true,
+	}
+	originalPath := filepath.Join(savePath, "Kasumi Toyama", "001_casual")
+
+	require.True(t, app.hasCompleteModel("001_casual", originalPath, &model.BuildData{}))
+	require.NoDirExists(t, originalPath)
+	require.DirExists(t, chinesePath)
 }
