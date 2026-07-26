@@ -300,6 +300,22 @@ type CostumeNameInfo struct {
 	English  string // 英文名称
 }
 
+func selectCostumeDescription(descriptions []any) string {
+	for _, index := range [...]int{3, 2, 0, 1} {
+		if index >= len(descriptions) {
+			continue
+		}
+		name, ok := descriptions[index].(string)
+		if !ok {
+			continue
+		}
+		if name = strings.TrimSpace(name); name != "" {
+			return name
+		}
+	}
+	return ""
+}
+
 // collectAllLive2dNames 收集所有 Live2D 名称
 // 从角色 API 的 seasonCostumeListMap 和资源索引中收集.
 //
@@ -523,31 +539,19 @@ func (c *Client) GetCostumeNames(ctx context.Context) (map[string]string, error)
 			continue
 		}
 		descList, ok := costumeInfo["description"].([]any)
-		if !ok || len(descList) < 3 {
+		if !ok || len(descList) == 0 {
 			continue
 		}
 		// 收集日语名称（用于同名消歧）
 		if len(descList) > 0 {
-			if jpn, _ := descList[0].(string); jpn != "" {
-				jpnNames[bundleName] = strings.TrimSpace(jpn)
+			japaneseName, _ := descList[0].(string)
+			if japaneseName = strings.TrimSpace(japaneseName); japaneseName != "" {
+				jpnNames[bundleName] = japaneseName
 			}
 		}
 		// 优先级：简体中文(3) > 繁体中文(2) > 日语(0) > 英语(1)
-		desc := ""
-		if len(descList) > 3 {
-			desc, _ = descList[3].(string)
-		}
-		if desc == "" && len(descList) > 2 {
-			desc, _ = descList[2].(string)
-		}
-		if desc == "" && len(descList) > 0 {
-			desc, _ = descList[0].(string)
-		}
-		if desc == "" && len(descList) > 1 {
-			desc, _ = descList[1].(string)
-		}
-		if desc != "" {
-			names[bundleName] = strings.TrimSpace(desc)
+		if desc := selectCostumeDescription(descList); desc != "" {
+			names[bundleName] = desc
 		}
 	}
 
