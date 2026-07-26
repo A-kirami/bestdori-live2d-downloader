@@ -212,3 +212,20 @@ func TestLive2dBuilder(t *testing.T) {
 		})
 	}
 }
+
+func TestIsModelCompleteUsesNormalizedPhysicsFilename(t *testing.T) {
+	modelPath := t.TempDir()
+	dataPath := filepath.Join(modelPath, "data")
+	require.NoError(t, os.MkdirAll(dataPath, 0750))
+	require.NoError(t, os.WriteFile(filepath.Join(dataPath, "model.moc"), []byte("model"), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(dataPath, "physics.json"), []byte("physics"), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(modelPath, "model.json"), []byte("{}"), 0600))
+
+	buildData := &model.BuildData{
+		Physics: model.BundleFile{FileName: "kasumi.physics.json"},
+	}
+
+	require.True(t, downloader.IsModelComplete(modelPath, buildData))
+	require.NoError(t, os.Remove(filepath.Join(dataPath, "physics.json")))
+	require.False(t, downloader.IsModelComplete(modelPath, buildData))
+}

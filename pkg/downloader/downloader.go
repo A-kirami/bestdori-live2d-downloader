@@ -23,6 +23,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+const physicsFileName = "physics.json"
+
 // MotionFile 表示动作文件的类型.
 type MotionFile = model.MotionFile
 
@@ -475,7 +477,7 @@ func (b *Live2dBuilder) prepareDownloadTasks() ([]downloadTask, []string) {
 	}
 
 	// 物理文件
-	physicsFile := filepath.Join(b.dataPath, "physics.json")
+	physicsFile := filepath.Join(b.dataPath, physicsFileName)
 	if _, err := os.Stat(physicsFile); os.IsNotExist(err) {
 		tasks = append(tasks, downloadTask{
 			bundleFile:    b.data.Physics,
@@ -801,7 +803,7 @@ func IsModelComplete(modelPath string, buildData *model.BuildData) bool {
 
 	// 检查 physics.json（仅当存在物理数据时）
 	if buildData.Physics.FileName != "" {
-		physicsFile := filepath.Join(dataPath, buildData.Physics.FileName)
+		physicsFile := filepath.Join(dataPath, physicsFileName)
 		if _, err := os.Stat(physicsFile); os.IsNotExist(err) {
 			return false
 		}
