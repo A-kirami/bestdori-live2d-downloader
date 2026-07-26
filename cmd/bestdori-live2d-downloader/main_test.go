@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/A-kirami/bestdori-live2d-downloader/pkg/api"
@@ -154,15 +156,58 @@ func TestHasCompleteModelFindsOtherNamingModeWithoutMovingIt(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(chinesePath, "model.json"), []byte("{}"), 0600))
 
 	app := &App{
-		ctx:              context.Background(),
-		charaNames:       map[string]string{"1": "户山香澄"},
-		costumeNames:     map[string]string{"001_casual": "常服"},
-		charaNamesOnce:   true,
-		costumeNamesOnce: true,
+		ctx:          context.Background(),
+		charaNames:   map[string]string{"1": "户山香澄"},
+		costumeNames: map[string]string{"001_casual": "常服"},
+		costumeNameInfo: map[string]*api.CostumeNameInfo{
+			"001_casual": {Chinese: "常服"},
+		},
 	}
 	originalPath := filepath.Join(savePath, "Kasumi Toyama", "001_casual")
 
 	require.True(t, app.hasCompleteModel("001_casual", originalPath, &model.BuildData{}))
 	require.NoDirExists(t, originalPath)
 	require.DirExists(t, chinesePath)
+}
+
+func TestLoadCharacterNamesInitializesOnceConcurrently(t *testing.T) {
+	logger, err := log.New(t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, logger.Close())
+	})
+
+	var requestCount atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requestCount.Add(1)
+		response := map[string]any{
+			"1": map[string]any{
+				"characterName": []string{"Kasumi", "Kasumi Toyama", "戶山香澄", "户山香澄"},
+			},
+		}
+		if encodeErr := json.NewEncoder(w).Encode(response); encodeErr != nil {
+			t.Errorf("encode character response: %v", encodeErr)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	config.Init()
+	cfg := config.Get()
+	cfg.CharaRosterURL = server.URL
+	cfg.UseCharaCache = false
+	client := api.NewClient()
+	app := &App{ctx: context.Background(), apiClient: client}
+
+	var waitGroup sync.WaitGroup
+	for range 20 {
+		waitGroup.Add(1)
+		go func() {
+			defer waitGroup.Done()
+			app.loadCharacterNames()
+		}()
+	}
+	waitGroup.Wait()
+
+	require.Equal(t, int32(1), requestCount.Load())
+	require.Equal(t, "户山香澄", app.charaNames["1"])
 }

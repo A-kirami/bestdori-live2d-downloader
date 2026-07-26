@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/A-kirami/bestdori-live2d-downloader/pkg/api"
 	"github.com/A-kirami/bestdori-live2d-downloader/pkg/config"
@@ -41,8 +42,8 @@ type App struct {
 	charaNames       map[string]string               // 角色ID -> 中文名
 	costumeNames     map[string]string               // 服装资源包名 -> 中文描述
 	costumeNameInfo  map[string]*api.CostumeNameInfo // 服装资源包名 -> 多语言名称信息
-	charaNamesOnce   bool                            // 是否已加载角色名
-	costumeNamesOnce bool                            // 是否已加载服装名
+	charaNamesOnce   sync.Once
+	costumeNamesOnce sync.Once
 }
 
 // NewApp 创建新的应用程序实例.
@@ -79,47 +80,50 @@ func (a *App) initialize() {
 
 // loadCharacterNames 加载角色中文名称映射.
 func (a *App) loadCharacterNames() {
-	if a.charaNamesOnce {
-		return
-	}
-	names, err := a.apiClient.GetCharacterNames(a.ctx)
-	if err != nil {
-		log.DefaultLogger.Warn().Err(err).Msg("加载角色中文名失败，将使用原始名称")
-		a.charaNames = make(map[string]string)
-	} else {
+	a.charaNamesOnce.Do(func() {
+		if a.charaNames != nil {
+			return
+		}
+
+		names, err := a.apiClient.GetCharacterNames(a.ctx)
+		if err != nil {
+			log.DefaultLogger.Warn().Err(err).Msg("加载角色中文名失败，将使用原始名称")
+			a.charaNames = make(map[string]string)
+			return
+		}
+
 		a.charaNames = names
 		log.DefaultLogger.Info().Int("count", len(names)).Msg("加载角色中文名成功")
-	}
-	a.charaNamesOnce = true
+	})
 }
 
 // loadCostumeNames 加载服装名称映射.
 func (a *App) loadCostumeNames() {
-	if a.costumeNamesOnce {
-		return
-	}
+	a.costumeNamesOnce.Do(func() {
+		if a.costumeNames != nil && a.costumeNameInfo != nil {
+			return
+		}
 
-	// 加载中文名称映射（用于显示和文件夹命名）
-	names, err := a.apiClient.GetCostumeNames(a.ctx)
-	if err != nil {
-		log.DefaultLogger.Warn().Err(err).Msg("加载服装中文名失败，将使用原始名称")
-		a.costumeNames = make(map[string]string)
-	} else {
-		a.costumeNames = names
-		log.DefaultLogger.Info().Int("count", len(names)).Msg("加载服装中文名成功")
-	}
+		// 加载中文名称映射（用于显示和文件夹命名）
+		names, err := a.apiClient.GetCostumeNames(a.ctx)
+		if err != nil {
+			log.DefaultLogger.Warn().Err(err).Msg("加载服装中文名失败，将使用原始名称")
+			a.costumeNames = make(map[string]string)
+		} else {
+			a.costumeNames = names
+			log.DefaultLogger.Info().Int("count", len(names)).Msg("加载服装中文名成功")
+		}
 
-	// 加载多语言名称信息（用于搜索）
-	nameInfo, err := a.apiClient.GetCostumeNameInfo(a.ctx)
-	if err != nil {
-		log.DefaultLogger.Warn().Err(err).Msg("加载服装名称信息失败")
-		a.costumeNameInfo = make(map[string]*api.CostumeNameInfo)
-	} else {
-		a.costumeNameInfo = nameInfo
-		log.DefaultLogger.Info().Int("count", len(nameInfo)).Msg("加载服装名称信息成功")
-	}
-
-	a.costumeNamesOnce = true
+		// 加载多语言名称信息（用于搜索）
+		nameInfo, err := a.apiClient.GetCostumeNameInfo(a.ctx)
+		if err != nil {
+			log.DefaultLogger.Warn().Err(err).Msg("加载服装名称信息失败")
+			a.costumeNameInfo = make(map[string]*api.CostumeNameInfo)
+		} else {
+			a.costumeNameInfo = nameInfo
+			log.DefaultLogger.Info().Int("count", len(nameInfo)).Msg("加载服装名称信息成功")
+		}
+	})
 }
 
 // lookupCostumeName 查找服装中文名称，优先使用 live2dName，其次使用 costume.
