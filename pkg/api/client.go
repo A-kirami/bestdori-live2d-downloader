@@ -19,6 +19,7 @@ import (
 	"github.com/A-kirami/bestdori-live2d-downloader/pkg/config"
 	"github.com/A-kirami/bestdori-live2d-downloader/pkg/log"
 	"github.com/A-kirami/bestdori-live2d-downloader/pkg/model"
+	"github.com/A-kirami/bestdori-live2d-downloader/pkg/naming"
 )
 
 // Client 表示 API 客户端
@@ -222,13 +223,6 @@ func (c *Client) GetCharacterNames(ctx context.Context) (map[string]string, erro
 
 // CharacterInfo 表示角色信息.
 type CharacterInfo = model.CharacterInfo
-
-// 服装类型常量.
-const (
-	costumePajamas   = "睡衣"
-	costumeHalloween = "万圣节"
-	costumePractice  = "剧情初始服装"
-)
 
 // defaultCharaColors 没有颜色代码的角色的默认颜色映射.
 //
@@ -486,7 +480,7 @@ func (c *Client) GetCostumeNameInfo(ctx context.Context) (map[string]*CostumeNam
 		suffix := parts[1]
 
 		// 使用模式匹配翻译（传入 eventNames）
-		if translated := translateCostumeSuffix(suffix, eventNames); translated != "" {
+		if translated := naming.TranslateCostumeSuffix(suffix, eventNames); translated != "" {
 			names[live2dName] = &CostumeNameInfo{
 				Original: live2dName,
 				Chinese:  translated,
@@ -616,7 +610,7 @@ func (c *Client) GetCostumeNames(ctx context.Context) (map[string]string, error)
 
 		// event_XXX_story_YY 模式：始终使用活动翻译（覆盖 API 卡牌描述）
 		if storyWithNumRe.MatchString(suffix) || storyNoNumRe.MatchString(suffix) {
-			if translated := translateCostumeSuffixWithStoryCount(
+			if translated := naming.TranslateCostumeSuffixWithStoryCount(
 				suffix,
 				eventNames,
 				charaEventStoryCounts,
@@ -647,7 +641,7 @@ func (c *Client) GetCostumeNames(ctx context.Context) (map[string]string, error)
 		}
 
 		// 使用模式匹配翻译
-		if translated := translateCostumeSuffixWithStoryCount(
+		if translated := naming.TranslateCostumeSuffixWithStoryCount(
 			suffix,
 			eventNames,
 			charaEventStoryCounts,
@@ -693,376 +687,6 @@ func (c *Client) GetCostumeNames(ctx context.Context) (map[string]string, error)
 	}
 
 	return names, nil
-}
-
-// translateVariant 翻译服装变体后缀.
-func translateVariant(variant string) string {
-	variants := map[string]string{
-		"penlight": "荧光棒",
-		"nocap":    "无帽",
-		"sunglass": "墨镜",
-	}
-	if name, ok := variants[variant]; ok {
-		return name
-	}
-	return variant
-}
-
-// translateCostumeSuffixWithStoryCount 带剧情数量信息的翻译.
-// 按角色+活动统计，单剧情不加编号，多剧情始终加编号.
-//
-//nolint:gocognit,nestif // 复杂的剧情翻译逻辑
-func translateCostumeSuffixWithStoryCount(
-	suffix string,
-	eventNames map[int]string,
-	charaEventStoryCounts map[string]int,
-	charaID string,
-) string {
-	// 活动剧情：event_XXX_story_YY
-	if matches := regexp.MustCompile(`^event_?(\d+)_story_?(\w+)$`).FindStringSubmatch(suffix); len(matches) > 2 {
-		eventID, err := strconv.Atoi(matches[1])
-		if err == nil {
-			storyNum := matches[2]
-			storyNum = strings.TrimLeft(storyNum, "0")
-			if storyNum == "" {
-				storyNum = "1"
-			}
-			key := charaID + ":" + matches[1]
-			if charaEventStoryCounts[key] > 1 {
-				if eventName, ok := eventNames[eventID]; ok {
-					return fmt.Sprintf("%s·剧情%s", eventName, storyNum)
-				}
-				return fmt.Sprintf("活动%s·剧情%s", matches[1], storyNum)
-			}
-			if eventName, ok := eventNames[eventID]; ok {
-				return fmt.Sprintf("%s·剧情", eventName)
-			}
-			return fmt.Sprintf("活动%s·剧情", matches[1])
-		}
-	}
-
-	// 活动剧情（无编号）：event_XXX_story
-	if matches := regexp.MustCompile(`^event_?(\d+)_story$`).FindStringSubmatch(suffix); len(matches) > 1 {
-		eventID, err := strconv.Atoi(matches[1])
-		if err == nil {
-			key := charaID + ":" + matches[1]
-			if charaEventStoryCounts[key] > 1 {
-				if eventName, ok := eventNames[eventID]; ok {
-					return fmt.Sprintf("%s·剧情1", eventName)
-				}
-				return fmt.Sprintf("活动%s·剧情1", matches[1])
-			}
-			if eventName, ok := eventNames[eventID]; ok {
-				return fmt.Sprintf("%s·剧情", eventName)
-			}
-			return fmt.Sprintf("活动%s·剧情", matches[1])
-		}
-	}
-
-	return translateCostumeSuffix(suffix, eventNames)
-}
-
-// translateCostumeSuffix 根据后缀模式翻译服装名称
-// 优先级：精确匹配 > 模式匹配 > 年份组合匹配
-//
-//nolint:gocognit,gocyclo,cyclop,funlen // 复杂的模式匹配逻辑
-func translateCostumeSuffix(suffix string, eventNames map[int]string) string {
-	// 1. 精确匹配表
-	exactMatches := map[string]string{
-		// 基础通用服
-		"casual":                 "常服",
-		"casual_summer":          "夏季常服",
-		"casual_winter":          "冬季常服",
-		"casual_winter-sunglass": "常服(冬·墨镜)",
-		"casual_v3":              "常服v3",
-		"school":                 "校服",
-		"school_winter":          "冬服",
-		"school_winter_2":        "冬服2",
-		"school_winter_s2":       "冬服s2",
-		"school_winter_v3":       "冬服v3",
-		"school_summer":          "夏服",
-		"school_summer_s2":       "夏服s2",
-		"school_summer_v3":       "夏服v3",
-		"school_armband":         "校服(臂章)",
-		"jh_school_winter":       "初中冬服",
-		"uniform":                "制服",
-		"default":                "默认",
-		"general":                "通用",
-
-		// 场景/职业/运动服
-		"gym_clothes":            "体操服",
-		"tracksuit":              "运动服",
-		"pajamas":                costumePajamas,
-		"swimsuit":               "泳装",
-		"swim_swit":              "泳装",
-		"apron":                  "围裙",
-		"cafe":                   "咖啡厅制服",
-		"fast_food":              "快餐店制服",
-		"arbeit":                 "打工服",
-		"store":                  "店员服",
-		"chairperson_casual":     "学生会长服",
-		"practice_clothes":       costumePractice,
-		"stage_costume":          "舞台服装",
-		"wd_practice":            "白色情人节练习服",
-		"garupa_t":               "Garupa T恤",
-		"memorial_middle_school": "纪念中学制服",
-
-		// 节日/纪念服
-		"af":                        "愚人节",
-		"xmas":                      "圣诞",
-		"hw":                        costumeHalloween,
-		"halloween":                 costumeHalloween,
-		"halloween_without_lantern": "万圣节(无灯)",
-		"furisode":                  "振袖",
-		"yukata":                    "浴衣",
-		"anniv":                     "周年纪念",
-		"special_5th":               "5周年纪念",
-		"girlparty2019":             "女子聚会2019",
-		"precious_summer":           "珍贵夏日",
-		"anime_live":                "动画Live",
-		"popipa_fes":                "Popipa祭典",
-		"kirameki_festival":         "闪光祭典",
-		"kirameki_festival_coat":    "闪光祭典(外套)",
-
-		// 剧情/舞台服
-		"chapter0_live":    "序章Live",
-		"chapter0_pajamas": "序章睡衣",
-		"romeo":            "罗密欧",
-		"juliet":           "朱丽叶",
-
-		// 特殊联动/企划
-		"michelle":        "米歇尔(兔子玩偶服)",
-		"michelle_ranger": "米歇尔·游侠(兔子玩偶服)",
-		"miko":            "巫女服",
-		"fantasy":         "Neo Fantasy Online",
-		"fantasy_01":      "Neo Fantasy Online 01",
-		"delta":           "Delta变体服",
-		"expose":          "《EXPOSE》演出服",
-		"ranger":          "游侠服",
-		"chispa":          "CHiSPA乐队服",
-		"sumimi":          "Sumimi企划服",
-		"nfo01":           "《NFO》游戏服装01",
-		"boss":            "Boss服",
-		"robot":           "机器人服",
-
-		// 系统基础服
-		"live_default":      "初始打歌服",
-		"live_practice":     costumePractice,
-		"live_sr_01":        "Live SR",
-		"live_ssr_01":       "Live SSR",
-		"vocal_limited_sr":  "Vocal限定SR",
-		"vocal_limited_ssr": "Vocal限定SSR",
-	}
-
-	if name, ok := exactMatches[suffix]; ok {
-		return name
-	}
-
-	// 2. 模式匹配（使用正则）
-
-	// 愚人节：YYYYaf 或 YYYY_af
-	if matches := regexp.MustCompile(`^(\d{4})af$`).FindStringSubmatch(suffix); len(matches) > 1 {
-		return matches[1] + "愚人节"
-	}
-
-	// 年份+基础服装+变体：如 casual-2023-penlight, casual-2023-nocap
-	if matches := regexp.MustCompile(`^(.+)-(\d{4})-(.+)$`).FindStringSubmatch(suffix); len(matches) > 3 {
-		baseName := translateCostumeSuffix(matches[1], eventNames)
-		if baseName != "" {
-			variantName := translateVariant(matches[3])
-			return fmt.Sprintf("%s(%s)(%s)", baseName, matches[2], variantName)
-		}
-	}
-
-	// 年份+基础服装：如 casual-2023, school_winter-2022
-	if matches := regexp.MustCompile(`^(.+)-(\d{4})$`).FindStringSubmatch(suffix); len(matches) > 2 {
-		baseName := translateCostumeSuffix(matches[1], eventNames)
-		if baseName != "" {
-			return fmt.Sprintf("%s(%s)", baseName, matches[2])
-		}
-	}
-
-	// 年份前缀+基础服装：如 2024_furisode, 2019_furisode
-	if matches := regexp.MustCompile(`^(\d{4})_(.+)$`).FindStringSubmatch(suffix); len(matches) > 2 {
-		baseName := translateCostumeSuffix(matches[2], eventNames)
-		if baseName != "" {
-			return fmt.Sprintf("%s(%s)", baseName, matches[1])
-		}
-	}
-
-	// 章节：chapterX_live, chapterX_pajamas
-	if matches := regexp.MustCompile(`^chapter(\d+)_(.+)$`).FindStringSubmatch(suffix); len(matches) > 2 {
-		chapterNum := matches[1]
-		costumeType := matches[2]
-		var typeName string
-		switch costumeType {
-		case "live":
-			typeName = "Live"
-		case costumePajamas:
-			typeName = "睡衣"
-		default:
-			typeName = costumeType
-		}
-		if chapterNum == "0" {
-			return "序章" + typeName
-		}
-		return fmt.Sprintf("第%s章%s", chapterNum, typeName)
-	}
-
-	// 活动服装：event_XXX（无 _story_ 后缀）
-	if matches := regexp.MustCompile(`^event_?(\d+)$`).FindStringSubmatch(suffix); len(matches) > 1 {
-		eventID, err := strconv.Atoi(matches[1])
-		if err == nil {
-			if eventName, ok := eventNames[eventID]; ok {
-				return eventName
-			}
-			return fmt.Sprintf("活动%s", matches[1])
-		}
-	}
-
-	// 活动剧情：event_XXX_story_YY 或 eventXXX_storyYY
-	if matches := regexp.MustCompile(`^event_?(\d+)_story_?(\w+)$`).FindStringSubmatch(suffix); len(matches) > 2 {
-		eventID, err := strconv.Atoi(matches[1])
-		if err == nil {
-			if eventName, ok := eventNames[eventID]; ok {
-				return fmt.Sprintf("%s(剧情%s)", eventName, matches[2])
-			}
-			return fmt.Sprintf("活动%s(剧情%s)", matches[1], matches[2])
-		}
-	}
-
-	// 活动卡牌：live_event_XXX_稀有度
-	if matches := regexp.MustCompile(`^live_event_(\d+)_(r|sr|ssr|ur)$`).FindStringSubmatch(suffix); len(matches) > 2 {
-		eventID, err := strconv.Atoi(matches[1])
-		if err == nil {
-			if eventName, ok := eventNames[eventID]; ok {
-				return fmt.Sprintf("%s(%s)", eventName, strings.ToUpper(matches[2]))
-			}
-			return fmt.Sprintf("活动%s(%s)", matches[1], strings.ToUpper(matches[2]))
-		}
-	}
-
-	// 联动：collabo_XXX
-	if strings.HasPrefix(suffix, "collabo") {
-		return "联动服"
-	}
-
-	// 梦想祭：dream_festival_XXX
-	if strings.HasPrefix(suffix, "dream_festival") {
-		return "梦想祭"
-	}
-
-	// 生日：birthday_XXX
-	if strings.HasPrefix(suffix, "birthday") {
-		return "生日限定"
-	}
-
-	// 总选举：Xth_general_election_r 或 general_election
-	if strings.Contains(suffix, "general_election") {
-		if matches := regexp.MustCompile(`(\d+).*general_election`).FindStringSubmatch(suffix); len(matches) > 1 {
-			return fmt.Sprintf("第%s届总选举", matches[1])
-		}
-		return "总选举"
-	}
-
-	// 乐队故事：band_story_X
-	if matches := regexp.MustCompile(`^band_story_(\d+)$`).FindStringSubmatch(suffix); len(matches) > 1 {
-		return fmt.Sprintf("乐队故事%s", matches[1])
-	}
-
-	// 特定故事：story_XX 或 story_XX-YYYY
-	if matches := regexp.MustCompile(`^story_(\d+)(-.*)?$`).FindStringSubmatch(suffix); len(matches) > 1 {
-		if matches[1] == "01" || matches[1] == "1" {
-			return costumePractice
-		}
-		if matches[1] == "03" {
-			return "米歇尔玩偶服"
-		}
-		return ""
-	}
-
-	// 初音联动：miku_XXX
-	if strings.HasPrefix(suffix, "miku_") {
-		mikuSongs := map[string]string{
-			"miku_shinkai":      "深海少女",
-			"miku_migikata":     "右肩之蝶",
-			"miku_rettou":       "左肩之蝶",
-			"miku_alien":        "Alien Alien",
-			"miku_lostone":      "Lost One的号哭",
-			"miku_romecin":      "罗密欧与辛德瑞拉",
-			"miku_nocturnality": "夜之蝶",
-		}
-		if name, ok := mikuSongs[suffix]; ok {
-			return "初音联动·" + name
-		}
-		return "初音联动"
-	}
-
-	// 角色专属：other-XX
-	if matches := regexp.MustCompile(`other-(\d+)$`).FindStringSubmatch(suffix); len(matches) > 1 {
-		// other-12 是活动小丑
-		if matches[1] == "12" {
-			return "活动小丑"
-		}
-		// other-41 是愚人节
-		if matches[1] == "41" {
-			return "愚人节"
-		}
-		return fmt.Sprintf("角色专属%s", matches[1])
-	}
-
-	// 振袖年份：2019_furisode 等（已在上面处理）
-
-	// 愚人节变体：2021af 等（已在上面处理）
-
-	// 3. 尝试从硬编码表中查找基础部分
-	baseCostumes := map[string]string{
-		"casual":      "常服",
-		"school":      "校服",
-		"pajamas":     costumePajamas,
-		"swimsuit":    "泳装",
-		"yukata":      "浴衣",
-		"halloween":   costumeHalloween,
-		"christmas":   "圣诞",
-		"furisode":    "振袖",
-		"arbeit":      "打工服",
-		"expose":      "《EXPOSE》演出服",
-		"fantasy":     "Neo Fantasy Online",
-		"delta":       "Delta变体服",
-		"miko":        "巫女服",
-		"apron":       "围裙",
-		"store":       "店员服",
-		"tracksuit":   "运动服",
-		"garupa":      "Garupa",
-		"popipa":      "Popipa",
-		"anime":       "动画",
-		"michelle":    "米歇尔(兔子玩偶服)",
-		"ranger":      "游侠服",
-		"cafe":        "咖啡厅",
-		"fast_food":   "快餐",
-		"gym":         "体操",
-		"chairperson": "学生会长",
-		"memorial":    "纪念",
-		"stage":       "舞台",
-		"practice":    "练习",
-		"live":        "Live",
-		"fes":         "祭典",
-		"boss":        "Boss服",
-		"robot":       "机器人服",
-		"chispa":      "CHiSPA乐队服",
-		"sumimi":      "Sumimi企划服",
-		"nfo":         "《NFO》游戏服装",
-		"wd":          "白色情人节",
-	}
-
-	// 尝试匹配基础词
-	for baseKey, baseName := range baseCostumes {
-		if strings.Contains(suffix, baseKey) {
-			return baseName
-		}
-	}
-
-	return ""
 }
 
 // GetChara 获取指定角色的详细信息
