@@ -55,6 +55,43 @@ func TestCharacterLoadResultIsIgnoredAfterReturningToCharacterList(t *testing.T)
 	require.Empty(t, m.ErrorMessage)
 }
 
+func TestCharacterLoadResultMustMatchLatestSelection(t *testing.T) {
+	t.Parallel()
+
+	m := tui.NewModel()
+	m.Update(tui.UpdateCharaListMsg{Characters: []model.CharacterInfo{
+		{ID: 1, Name: "户山香澄"},
+		{ID: 2, Name: "花园多惠"},
+	}})
+
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	firstRequest := <-m.GetCharaSelectChan()
+	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	secondRequest := <-m.GetCharaSelectChan()
+
+	m.Update(tui.UpdateListMsg{
+		Items:     []*model.Live2dAsset{{Server: "jp", Costume: "001_casual"}},
+		CharaName: "香澄",
+		RequestID: firstRequest.RequestID,
+	})
+	m.Update(tui.ShowCharaListErrorMsg{Message: "旧请求失败", RequestID: firstRequest.RequestID})
+
+	require.Equal(t, tui.StateLoading, m.State)
+	require.Empty(t, m.CurrentCharaName)
+	require.Empty(t, m.ErrorMessage)
+
+	m.Update(tui.UpdateListMsg{
+		Items:     []*model.Live2dAsset{{Server: "jp", Costume: "002_casual"}},
+		CharaName: "多惠",
+		RequestID: secondRequest.RequestID,
+	})
+
+	require.Equal(t, tui.StateList, m.State)
+	require.Equal(t, "多惠", m.CurrentCharaName)
+}
+
 func TestFilteringPreservesSelections(t *testing.T) {
 	t.Parallel()
 
@@ -131,7 +168,9 @@ func TestCharacterSelectionEntersLoadingState(t *testing.T) {
 	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
 	require.Equal(t, tui.StateLoading, m.State)
-	require.Equal(t, 1, <-m.GetCharaSelectChan())
+	request := <-m.GetCharaSelectChan()
+	require.Equal(t, 1, request.CharaID)
+	require.NotZero(t, request.RequestID)
 }
 
 func TestNewModelUsesConfiguredNamingMode(t *testing.T) {

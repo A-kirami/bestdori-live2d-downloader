@@ -162,10 +162,11 @@ type Model struct {
 	DownloadList     list.Model               // 下载列表组件
 	State            string                   // 当前状态
 	SelectChan       chan []*SelectedItem     // 选择通道，用于处理选择请求
-	CharaSelectChan  chan int                 // 角色选择通道
+	CharaSelectChan  chan CharaLoadRequest    // 角色选择通道
 	Spinner          spinner.Model            // 加载动画组件
 	CurrentCharaName string                   // 当前角色名称
 	ExtraCharaName   string                   // 额外角色名称
+	charaRequestID   uint64                   // 当前角色加载请求 ID
 	program          *tea.Program             // TUI 程序实例
 	cancelChan       chan struct{}            // 取消通道，用于取消操作
 	Ctx              context.Context          // 上下文，用于控制操作的生命周期
@@ -263,7 +264,7 @@ func NewModel() Model {
 		DownloadList:    downloadList,
 		State:           StateLoading,
 		SelectChan:      make(chan []*SelectedItem, 1),
-		CharaSelectChan: make(chan int, 1),
+		CharaSelectChan: make(chan CharaLoadRequest, 1),
 		Spinner:         s,
 		cancelChan:      make(chan struct{}), // 初始化取消通道
 		Ctx:             ctx,
@@ -286,6 +287,7 @@ type UpdateListMsg struct {
 	CostumeJapaneseNames map[string]string    // 服装日文名称（用于搜索）
 	CharaName            string               // 角色显示名称
 	ExtraCharaName       string               // 角色补充名称
+	RequestID            uint64               // 角色加载请求 ID
 }
 
 // UpdateDownloadListMsg 表示更新下载列表消息.
@@ -300,6 +302,12 @@ type SelectedItem struct {
 	NamingMode  config.NamingMode  // 下载时使用的命名模式
 }
 
+// CharaLoadRequest 表示一次角色服装加载请求.
+type CharaLoadRequest struct {
+	CharaID   int
+	RequestID uint64
+}
+
 // UpdateCharaListMsg 表示更新角色列表消息.
 type UpdateCharaListMsg struct {
 	Characters []model.CharacterInfo // 角色信息列表
@@ -307,7 +315,8 @@ type UpdateCharaListMsg struct {
 
 // ShowCharaListErrorMsg 表示需要在角色列表中显示的错误.
 type ShowCharaListErrorMsg struct {
-	Message string
+	Message   string
+	RequestID uint64
 }
 
 // handleLoadingState 处理加载状态下的消息.
@@ -555,7 +564,7 @@ func (m *Model) handleDownloadingState(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 //
 //nolint:gocognit // 复杂的列表更新逻辑
 func (m *Model) handleUpdateListMsg(msg UpdateListMsg) (tea.Model, tea.Cmd) {
-	if m.State != StateLoading {
+	if m.State != StateLoading || msg.RequestID != m.charaRequestID {
 		return m, nil
 	}
 
@@ -647,7 +656,7 @@ func (m *Model) handleUpdateCharaListMsg(msg UpdateCharaListMsg) (tea.Model, tea
 
 // handleShowCharaListErrorMsg 显示角色列表加载错误.
 func (m *Model) handleShowCharaListErrorMsg(msg ShowCharaListErrorMsg) (tea.Model, tea.Cmd) {
-	if m.State != StateLoading {
+	if m.State != StateLoading || msg.RequestID != m.charaRequestID {
 		return m, nil
 	}
 
@@ -672,8 +681,9 @@ func (m *Model) handleCharaListState(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		if i, ok := m.CharaList.SelectedItem().(charaListItem); ok {
 			m.State = StateLoading
+			m.charaRequestID++
 			select {
-			case m.CharaSelectChan <- i.id:
+			case m.CharaSelectChan <- CharaLoadRequest{CharaID: i.id, RequestID: m.charaRequestID}:
 			default:
 			}
 			return m, m.Spinner.Tick
@@ -1075,7 +1085,7 @@ func (m *Model) GetSelectChan() <-chan []*SelectedItem {
 }
 
 // GetCharaSelectChan 返回角色选择通道.
-func (m *Model) GetCharaSelectChan() <-chan int {
+func (m *Model) GetCharaSelectChan() <-chan CharaLoadRequest {
 	return m.CharaSelectChan
 }
 

@@ -339,18 +339,26 @@ func (a *App) updateProgressComplete(displayName string, data *model.BuildData) 
 }
 
 // updateCharaCostumes 更新角色服装列表.
-func (a *App) updateCharaCostumes(id int, firstName string, displayName string) {
+func (a *App) updateCharaCostumes(request tui.CharaLoadRequest, firstName string, displayName string) {
+	id := request.CharaID
+
 	// 获取角色服装列表
 	costumes, err := a.apiClient.GetCharaCostumes(a.ctx, id)
 	if err != nil {
 		log.DefaultLogger.Error().Int("charaID", id).Err(err).Msg("获取角色服装列表失败")
-		a.program.Send(tui.ShowCharaListErrorMsg{Message: fmt.Sprintf("获取角色服装列表失败: %v", err)})
+		a.program.Send(tui.ShowCharaListErrorMsg{
+			Message:   fmt.Sprintf("获取角色服装列表失败: %v", err),
+			RequestID: request.RequestID,
+		})
 		return
 	}
 
 	if len(costumes) == 0 {
 		log.DefaultLogger.Warn().Int("charaID", id).Msg("未找到该角色的 Live2D 模型")
-		a.program.Send(tui.ShowCharaListErrorMsg{Message: "未找到该角色的 Live2D 模型"})
+		a.program.Send(tui.ShowCharaListErrorMsg{
+			Message:   "未找到该角色的 Live2D 模型",
+			RequestID: request.RequestID,
+		})
 		return
 	}
 
@@ -362,7 +370,10 @@ func (a *App) updateCharaCostumes(id int, firstName string, displayName string) 
 
 	if len(visibleCostumes) == 0 {
 		log.DefaultLogger.Warn().Int("charaID", id).Msg("该角色没有可下载的 Live2D 模型")
-		a.program.Send(tui.ShowCharaListErrorMsg{Message: "该角色没有可下载的 Live2D 模型"})
+		a.program.Send(tui.ShowCharaListErrorMsg{
+			Message:   "该角色没有可下载的 Live2D 模型",
+			RequestID: request.RequestID,
+		})
 		return
 	}
 
@@ -394,6 +405,7 @@ func (a *App) updateCharaCostumes(id int, firstName string, displayName string) 
 		CostumeJapaneseNames: a.costumeJapaneseNames,
 		CharaName:            firstName,
 		ExtraCharaName:       extraCharaName,
+		RequestID:            request.RequestID,
 	})
 }
 
@@ -604,9 +616,9 @@ func (a *App) Run() {
 		case <-a.tuiModel.GetCancelChan():
 			a.cancel()
 			return
-		case charaID := <-a.tuiModel.GetCharaSelectChan():
-			firstName, displayName := a.getCharaNames(charaID)
-			a.updateCharaCostumes(charaID, firstName, displayName)
+		case request := <-a.tuiModel.GetCharaSelectChan():
+			firstName, displayName := a.getCharaNames(request.CharaID)
+			a.updateCharaCostumes(request, firstName, displayName)
 		case selectedItems := <-a.tuiModel.GetSelectChan():
 			if !a.handleBatchDownload(selectedItems) {
 				return
