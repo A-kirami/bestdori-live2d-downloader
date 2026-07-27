@@ -18,6 +18,7 @@ func TestTranslateCostumeSuffix(t *testing.T) {
 		{name: "year and variant", suffix: "casual-2023-penlight", want: "常服(2023)(荧光棒)"},
 		{name: "year prefix", suffix: "2024_furisode", want: "振袖(2024)"},
 		{name: "chapter", suffix: "chapter2_live", want: "第2章Live"},
+		{name: "chapter pajamas", suffix: "chapter2_pajamas", want: "第2章睡衣"},
 		{name: "event", suffix: "event_12", want: "测试活动"},
 		{name: "event card", suffix: "live_event_12_ssr", want: "测试活动(SSR)"},
 		{name: "story practice", suffix: "story_01", want: "剧情初始服装"},
