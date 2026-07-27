@@ -221,7 +221,7 @@ func (a *App) loadCharacterList() {
 }
 
 // getLive2dPath 根据 Live2D 名称获取保存路径.
-func (a *App) getLive2dPath(live2dName string) (string, error) {
+func (a *App) getLive2dPath(live2dName string, namingMode config.NamingMode) (string, error) {
 	parsed, ok := parseLive2dName(live2dName)
 	if !ok {
 		log.DefaultLogger.Error().Str("live2dName", live2dName).Msg("无效的Live2D名称格式")
@@ -229,7 +229,7 @@ func (a *App) getLive2dPath(live2dName string) (string, error) {
 	}
 
 	// 使用中文命名模式
-	if a.tuiModel.NamingMode == config.NamingModeChinese {
+	if namingMode == config.NamingModeChinese {
 		return a.getLive2dPathChinese(live2dName, parsed.CharaID, parsed.Costume)
 	}
 
@@ -326,7 +326,7 @@ func (a *App) hasCompleteModel(live2dName string, currentPath string, buildData 
 }
 
 // downloadLive2d 下载指定的 Live2D 模型.
-func (a *App) downloadLive2d(live2d *model.Live2dAsset, displayName string) error {
+func (a *App) downloadLive2d(live2d *model.Live2dAsset, displayName string, namingMode config.NamingMode) error {
 	log.DefaultLogger.Info().Str("live2dName", live2d.Costume).Msg("开始下载Live2D")
 
 	server, data, err := a.apiClient.GetLive2dData(a.ctx, live2d)
@@ -335,7 +335,7 @@ func (a *App) downloadLive2d(live2d *model.Live2dAsset, displayName string) erro
 		return fmt.Errorf("获取Live2D数据失败: %w", err)
 	}
 
-	path, err := a.getLive2dPath(live2d.Costume)
+	path, err := a.getLive2dPath(live2d.Costume, namingMode)
 	if err != nil {
 		return err
 	}
@@ -530,6 +530,7 @@ func (a *App) getCharaNames(id int) (string, string) {
 func (a *App) downloadModel(
 	asset *model.Live2dAsset,
 	displayName string,
+	namingMode config.NamingMode,
 	errChan chan error,
 	completed map[string]bool,
 	progressUpdated chan struct{},
@@ -540,7 +541,7 @@ func (a *App) downloadModel(
 		name = asset.String()
 	}
 
-	if err := a.downloadLive2d(asset, displayName); err != nil {
+	if err := a.downloadLive2d(asset, displayName, namingMode); err != nil {
 		if err.Error() == ErrDownloadCancelled {
 			errChan <- err
 			return
@@ -591,7 +592,7 @@ func (a *App) handleBatchDownload(selectedItems []*tui.SelectedItem) bool {
 			modelSem <- struct{}{}
 			go func(item *tui.SelectedItem) {
 				defer func() { <-modelSem }()
-				a.downloadModel(item.Asset, item.DisplayName, errChan, completed, progressUpdated)
+				a.downloadModel(item.Asset, item.DisplayName, item.NamingMode, errChan, completed, progressUpdated)
 			}(item)
 		}
 	}

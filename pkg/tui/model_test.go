@@ -82,6 +82,7 @@ func TestNamingModeChangesSelectedItemDisplayName(t *testing.T) {
 	selected := <-m.GetSelectChan()
 	require.Len(t, selected, 1)
 	require.Equal(t, "001_casual (jp)", selected[0].DisplayName)
+	require.Equal(t, config.NamingModeOriginal, selected[0].NamingMode)
 }
 
 func TestCharacterSelectionEntersLoadingState(t *testing.T) {

@@ -309,6 +309,7 @@ type UpdateDownloadListMsg struct {
 type SelectedItem struct {
 	Asset       *model.Live2dAsset // 原始资源
 	DisplayName string             // 显示名称
+	NamingMode  config.NamingMode  // 下载时使用的命名模式
 }
 
 // UpdateCharaListMsg 表示更新角色列表消息.
@@ -520,6 +521,7 @@ func (m *Model) handleListEnter() (tea.Model, tea.Cmd) {
 			selectedItems = append(selectedItems, &SelectedItem{
 				Asset:       asset,
 				DisplayName: displayName,
+				NamingMode:  m.NamingMode,
 			})
 		}
 		m.State = StateDownloading
