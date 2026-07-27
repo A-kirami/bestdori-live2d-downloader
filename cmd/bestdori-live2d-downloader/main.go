@@ -97,6 +97,11 @@ func (a *App) loadCharacterNames() {
 	})
 }
 
+func (a *App) localizedCharacterName(charaID int) string {
+	a.loadCharacterNames()
+	return a.charaNames[strconv.Itoa(charaID)]
+}
+
 // loadCostumeNames 加载服装名称映射.
 func (a *App) loadCostumeNames() {
 	a.costumeNamesOnce.Do(func() {
@@ -269,39 +274,9 @@ func (a *App) getLive2dPathChinese(live2dName string, charaID int, costume strin
 
 // getLive2dPathOriginal 使用原始命名获取保存路径.
 func (a *App) getLive2dPathOriginal(_ string, charaID int, costume string, costumePart string) (string, error) {
-	chara, err := a.apiClient.GetChara(a.ctx, charaID)
-	if err != nil {
-		log.DefaultLogger.Warn().Int("charaID", charaID).Err(err).Msg("获取角色信息失败，使用角色ID作为目录名")
-		path := filepath.Join(config.Get().Live2dSavePath, fmt.Sprintf("chara_%03d", charaID), costumePart)
-		log.DefaultLogger.Info().Str("path", path).Msg("获取Live2D路径成功")
-		return path, nil
-	}
-
-	// 使用全名（characterName），优先级：简体中文(3) > 繁体中文(2) > 日语(0) > 英语(1)
-	characterNames, ok := chara["characterName"].([]any)
-	if !ok || len(characterNames) < 4 {
-		log.DefaultLogger.Warn().Int("charaID", charaID).Msg("无效的角色名字格式，使用角色ID作为目录名")
-		path := filepath.Join(config.Get().Live2dSavePath, fmt.Sprintf("chara_%03d", charaID), costumePart)
-		log.DefaultLogger.Info().Str("path", path).Msg("获取Live2D路径成功")
-		return path, nil
-	}
-
-	charaName := ""
-	if len(characterNames) > 3 {
-		charaName, _ = characterNames[3].(string)
-	}
-	if charaName == "" && len(characterNames) > 2 {
-		charaName, _ = characterNames[2].(string)
-	}
-	if charaName == "" && len(characterNames) > 0 {
-		charaName, _ = characterNames[0].(string)
-	}
-	if charaName == "" && len(characterNames) > 1 {
-		charaName, _ = characterNames[1].(string)
-	}
-
+	charaName := a.localizedCharacterName(charaID)
 	if charaName == "" {
-		log.DefaultLogger.Warn().Int("charaID", charaID).Msg("无法获取角色名，使用角色ID作为目录名")
+		log.DefaultLogger.Warn().Int("charaID", charaID).Msg("获取角色信息失败，使用角色ID作为目录名")
 		path := filepath.Join(config.Get().Live2dSavePath, fmt.Sprintf("chara_%03d", charaID), costumePart)
 		log.DefaultLogger.Info().Str("path", path).Msg("获取Live2D路径成功")
 		return path, nil
@@ -313,8 +288,6 @@ func (a *App) getLive2dPathOriginal(_ string, charaID int, costume string, costu
 }
 
 // hasCompleteModel 检查当前或其他命名模式下是否已有完整模型.
-//
-//nolint:gocognit // 复杂的路径查找逻辑
 func (a *App) hasCompleteModel(live2dName string, currentPath string, buildData *model.BuildData) bool {
 	// 检查当前路径是否存在完整模型
 	if downloader.IsModelComplete(currentPath, buildData) {
@@ -346,36 +319,10 @@ func (a *App) hasCompleteModel(live2dName string, currentPath string, buildData 
 	}
 
 	// 尝试原始命名路径（使用角色全名）
-	chara, err := a.apiClient.GetChara(a.ctx, parsed.CharaID)
-	if err == nil { //nolint:nestif // 复杂的路径查找逻辑
-		characterNames, charaOk := chara["characterName"].([]any)
-		if charaOk && len(characterNames) >= 4 {
-			fallbackName := ""
-			if len(characterNames) > 3 {
-				fallbackName, _ = characterNames[3].(string)
-			}
-			if fallbackName == "" && len(characterNames) > 2 {
-				fallbackName, _ = characterNames[2].(string)
-			}
-			if fallbackName == "" && len(characterNames) > 0 {
-				fallbackName, _ = characterNames[0].(string)
-			}
-			if fallbackName == "" && len(characterNames) > 1 {
-				fallbackName, _ = characterNames[1].(string)
-			}
-			if fallbackName != "" {
-				originalPath := filepath.Join(
-					savePath,
-					sanitizeFilename(fallbackName),
-					sanitizeFilename(parsed.Costume),
-				)
-				if originalPath != currentPath {
-					if downloader.IsModelComplete(originalPath, buildData) {
-						return true
-					}
-				}
-			}
-		}
+	fallbackName := a.localizedCharacterName(parsed.CharaID)
+	originalPath := filepath.Join(savePath, sanitizeFilename(fallbackName), sanitizeFilename(parsed.Costume))
+	if fallbackName != "" && originalPath != currentPath && downloader.IsModelComplete(originalPath, buildData) {
+		return true
 	}
 
 	// 尝试原始命名路径（使用角色ID）
@@ -596,26 +543,26 @@ func (a *App) getCharaNames(id int) (string, string) {
 
 	// 检查角色信息格式
 	characterNames, ok := chara["characterName"].([]any)
-	if !ok || len(characterNames) < 4 {
+	if !ok || len(characterNames) == 0 {
 		log.DefaultLogger.Error().Int("charaID", id).Msg("无效的角色名字格式")
 		defaultName := fmt.Sprintf("角色%d", id)
 		return defaultName, defaultName
 	}
 
-	// 检查每个元素是否为字符串
-	firstName, ok := characterNames[0].(string)
-	if !ok {
-		log.DefaultLogger.Error().Int("charaID", id).Msg("角色名字格式错误")
+	firstName, _ := characterNames[0].(string)
+	firstName = strings.TrimSpace(firstName)
+
+	displayName := a.localizedCharacterName(id)
+	if firstName == "" {
+		firstName = displayName
+	}
+	if displayName == "" {
+		displayName = firstName
+	}
+	if displayName == "" {
 		defaultName := fmt.Sprintf("角色%d", id)
 		return defaultName, defaultName
 	}
-	firstName = strings.TrimSpace(firstName)
-
-	displayName, ok := characterNames[3].(string)
-	if !ok || displayName == "" {
-		displayName = firstName
-	}
-	displayName = strings.TrimSpace(displayName)
 
 	return firstName, displayName
 }

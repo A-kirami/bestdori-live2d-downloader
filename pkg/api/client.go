@@ -174,8 +174,6 @@ func (c *Client) GetCharaRoster(ctx context.Context) (map[string]any, error) {
 // 返回:
 //   - map[string]string: 角色ID到中文全名的映射
 //   - error: 错误信息
-//
-//nolint:gocognit // 多语言优先级处理固有复杂度
 func (c *Client) GetCharacterNames(ctx context.Context) (map[string]string, error) {
 	url := fmt.Sprintf("%s/all.5.json", c.charaRosterURL)
 	data, err := c.FetchData(ctx, url, "chara_names_5.json")
@@ -191,25 +189,12 @@ func (c *Client) GetCharacterNames(ctx context.Context) (map[string]string, erro
 		}
 		// 使用 characterName（全名）而非 firstName
 		charaNameList, ok := charaInfo["characterName"].([]any)
-		if !ok || len(charaNameList) < 4 {
+		if !ok || len(charaNameList) == 0 {
 			continue
 		}
-		// 优先级：简体中文(3) > 繁体中文(2) > 日语(0) > 英语(1)
-		chineseName := ""
-		if len(charaNameList) > 3 {
-			chineseName, _ = charaNameList[3].(string)
-		}
-		if chineseName == "" && len(charaNameList) > 2 {
-			chineseName, _ = charaNameList[2].(string)
-		}
-		if chineseName == "" && len(charaNameList) > 0 {
-			chineseName, _ = charaNameList[0].(string)
-		}
-		if chineseName == "" && len(charaNameList) > 1 {
-			chineseName, _ = charaNameList[1].(string)
-		}
+		chineseName := selectLocalizedName(charaNameList)
 		if chineseName != "" {
-			names[charaID] = strings.TrimSpace(chineseName)
+			names[charaID] = chineseName
 		}
 	}
 
@@ -259,15 +244,14 @@ func (c *Client) GetCharacterInfoList(ctx context.Context) ([]CharacterInfo, err
 
 		// 使用 characterName（全名）而不是 firstName
 		charaNameList, ok := charaInfo["characterName"].([]any)
-		if !ok || len(charaNameList) < 4 {
+		if !ok || len(charaNameList) == 0 {
 			continue
 		}
 
-		chineseName, _ := charaNameList[3].(string)
+		chineseName := selectLocalizedName(charaNameList)
 		if chineseName == "" {
 			continue
 		}
-		chineseName = strings.TrimSpace(chineseName)
 
 		colorCode, _ := charaInfo["colorCode"].(string)
 
@@ -300,12 +284,12 @@ type CostumeNameInfo struct {
 	English  string // 英文名称
 }
 
-func selectCostumeDescription(descriptions []any) string {
+func selectLocalizedName(names []any) string {
 	for _, index := range [...]int{3, 2, 0, 1} {
-		if index >= len(descriptions) {
+		if index >= len(names) {
 			continue
 		}
-		name, ok := descriptions[index].(string)
+		name, ok := names[index].(string)
 		if !ok {
 			continue
 		}
@@ -378,13 +362,11 @@ func (c *Client) collectAllLive2dNames(ctx context.Context) (map[string]bool, er
 
 // collectEventNames 获取活动名称映射（用于 event_XXX_story_YY 等模式）
 // 优先级：简体中文(3) > 繁体中文(2) > 日语(0) > 英语(1).
-//
-//nolint:gocognit // 多语言优先级选择固有复杂度
 func (c *Client) collectEventNames(ctx context.Context) map[int]string {
 	eventNames := make(map[int]string)
 	eventsURL := "https://bestdori.com/api/events/all.5.json"
 	eventsData, eventsErr := c.FetchData(ctx, eventsURL, "events_all_5.json")
-	if eventsErr == nil { //nolint:nestif // 复杂的事件数据处理
+	if eventsErr == nil {
 		for eventIDStr, info := range eventsData {
 			eventID, parseErr := strconv.Atoi(eventIDStr)
 			if parseErr != nil {
@@ -395,24 +377,12 @@ func (c *Client) collectEventNames(ctx context.Context) map[int]string {
 				continue
 			}
 			nameList, ok := eventInfo["eventName"].([]any)
-			if !ok || len(nameList) < 4 {
+			if !ok || len(nameList) == 0 {
 				continue
 			}
-			name := ""
-			if len(nameList) > 3 {
-				name, _ = nameList[3].(string)
-			}
-			if name == "" && len(nameList) > 2 {
-				name, _ = nameList[2].(string)
-			}
-			if name == "" && len(nameList) > 0 {
-				name, _ = nameList[0].(string)
-			}
-			if name == "" && len(nameList) > 1 {
-				name, _ = nameList[1].(string)
-			}
+			name := selectLocalizedName(nameList)
 			if name != "" {
-				eventNames[eventID] = strings.TrimSpace(name)
+				eventNames[eventID] = name
 			}
 		}
 	}
@@ -463,15 +433,7 @@ func (c *Client) GetCostumeNameInfo(ctx context.Context) (map[string]*CostumeNam
 			nameInfo.English, _ = descList[1].(string)
 			nameInfo.English = strings.TrimSpace(nameInfo.English)
 		}
-		if len(descList) > 2 {
-			nameInfo.Chinese, _ = descList[2].(string) // 繁体中文
-			nameInfo.Chinese = strings.TrimSpace(nameInfo.Chinese)
-		}
-		if len(descList) > 3 {
-			if simplified, _ := descList[3].(string); simplified != "" {
-				nameInfo.Chinese = strings.TrimSpace(simplified) // 简体中文优先
-			}
-		}
+		nameInfo.Chinese = selectLocalizedName(descList)
 
 		names[bundleName] = nameInfo
 	}
@@ -550,7 +512,7 @@ func (c *Client) GetCostumeNames(ctx context.Context) (map[string]string, error)
 			}
 		}
 		// 优先级：简体中文(3) > 繁体中文(2) > 日语(0) > 英语(1)
-		if desc := selectCostumeDescription(descList); desc != "" {
+		if desc := selectLocalizedName(descList); desc != "" {
 			names[bundleName] = desc
 		}
 	}
