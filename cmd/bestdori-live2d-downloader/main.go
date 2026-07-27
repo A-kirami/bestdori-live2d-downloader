@@ -192,8 +192,7 @@ func (a *App) loadCharacterList() {
 	charaList, err := a.apiClient.GetCharacterInfoList(a.ctx)
 	if err != nil {
 		log.DefaultLogger.Error().Err(err).Msg("加载角色列表失败")
-		a.tuiModel.SetError(fmt.Sprintf("加载角色列表失败: %v", err))
-		a.tuiModel.State = tui.StateCharaList
+		a.program.Send(tui.ShowCharaListErrorMsg{Message: fmt.Sprintf("加载角色列表失败: %v", err)})
 		return
 	}
 
@@ -384,34 +383,27 @@ func (a *App) updateCharaCostumes(id int, firstName string, displayName string) 
 	costumes, err := a.apiClient.GetCharaCostumes(a.ctx, id)
 	if err != nil {
 		log.DefaultLogger.Error().Int("charaID", id).Err(err).Msg("获取角色服装列表失败")
-		a.tuiModel.SetError(fmt.Sprintf("获取角色服装列表失败: %v", err))
-		a.tuiModel.State = tui.StateCharaList
+		a.program.Send(tui.ShowCharaListErrorMsg{Message: fmt.Sprintf("获取角色服装列表失败: %v", err)})
 		return true
 	}
 
 	if len(costumes) == 0 {
 		log.DefaultLogger.Warn().Int("charaID", id).Msg("未找到该角色的 Live2D 模型")
-		a.tuiModel.SetError("未找到该角色的 Live2D 模型")
-		a.tuiModel.State = tui.StateCharaList
+		a.program.Send(tui.ShowCharaListErrorMsg{Message: "未找到该角色的 Live2D 模型"})
 		return true
 	}
-
-	// 清除之前的错误消息
-	a.tuiModel.ClearError()
 
 	// 过滤出可下载的服装（验证 buildData.asset 是否存在）
 	validCostumes, err := a.filterValidCostumes(costumes)
 	if err != nil {
 		log.DefaultLogger.Error().Int("charaID", id).Err(err).Msg("检查角色服装资源失败")
-		a.tuiModel.SetError(fmt.Sprintf("检查角色服装资源失败: %v", err))
-		a.tuiModel.State = tui.StateCharaList
+		a.program.Send(tui.ShowCharaListErrorMsg{Message: fmt.Sprintf("检查角色服装资源失败: %v", err)})
 		return true
 	}
 
 	if len(validCostumes) == 0 {
 		log.DefaultLogger.Warn().Int("charaID", id).Msg("该角色没有可下载的 Live2D 模型")
-		a.tuiModel.SetError("该角色没有可下载的 Live2D 模型")
-		a.tuiModel.State = tui.StateCharaList
+		a.program.Send(tui.ShowCharaListErrorMsg{Message: "该角色没有可下载的 Live2D 模型"})
 		return true
 	}
 
@@ -422,13 +414,6 @@ func (a *App) updateCharaCostumes(id int, firstName string, displayName string) 
 		costumeAssets = append(costumeAssets, &aCopy)
 	}
 
-	// 更新列表
-	a.tuiModel.CurrentCharaName = firstName
-	if displayName != firstName {
-		a.tuiModel.ExtraCharaName = displayName
-	} else {
-		a.tuiModel.ExtraCharaName = ""
-	}
 	log.DefaultLogger.Info().
 		Str("charaName", firstName).
 		Int("costumesCount", len(validCostumes)).
@@ -453,6 +438,10 @@ func (a *App) updateCharaCostumes(id int, firstName string, displayName string) 
 			}
 		}
 	}
+	extraCharaName := ""
+	if displayName != firstName {
+		extraCharaName = displayName
+	}
 
 	// 发送列表更新（costumeNames 用于显示，costumeNameInfo 用于搜索）
 	a.program.Send(tui.UpdateListMsg{
@@ -460,6 +449,8 @@ func (a *App) updateCharaCostumes(id int, firstName string, displayName string) 
 		CostumeNames:    a.costumeNames,     // 显示用的中文名映射
 		CostumeNameInfo: costumeNameInfoMap, // 搜索用的多语言信息
 		CharaID:         id,
+		CharaName:       firstName,
+		ExtraCharaName:  extraCharaName,
 	})
 
 	return true

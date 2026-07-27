@@ -296,6 +296,8 @@ type UpdateListMsg struct {
 	CostumeNames    map[string]string           // 服装中文名映射（用于显示）
 	CostumeNameInfo map[string]*CostumeNameInfo // 服装多语言信息（用于搜索）
 	CharaID         int                         // 角色ID
+	CharaName       string                      // 角色显示名称
+	ExtraCharaName  string                      // 角色补充名称
 }
 
 // UpdateDownloadListMsg 表示更新下载列表消息.
@@ -312,6 +314,11 @@ type SelectedItem struct {
 // UpdateCharaListMsg 表示更新角色列表消息.
 type UpdateCharaListMsg struct {
 	Characters []model.CharacterInfo // 角色信息列表
+}
+
+// ShowCharaListErrorMsg 表示需要在角色列表中显示的错误.
+type ShowCharaListErrorMsg struct {
+	Message string
 }
 
 // handleLoadingState 处理加载状态下的消息.
@@ -582,6 +589,9 @@ func (m *Model) handleDownloadingState(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 //nolint:gocognit // 复杂的列表更新逻辑
 func (m *Model) handleUpdateListMsg(msg UpdateListMsg) (tea.Model, tea.Cmd) {
 	m.CurrentCharaID = msg.CharaID
+	m.CurrentCharaName = msg.CharaName
+	m.ExtraCharaName = msg.ExtraCharaName
+	m.ClearError()
 	listItems := make([]list.Item, len(msg.Items))
 	for i, asset := range msg.Items {
 		originalTitle := ""
@@ -665,6 +675,13 @@ func (m *Model) handleUpdateCharaListMsg(msg UpdateCharaListMsg) (tea.Model, tea
 		}
 	}
 	m.CharaList.SetItems(listItems)
+	m.State = StateCharaList
+	return m, nil
+}
+
+// handleShowCharaListErrorMsg 显示角色列表加载错误.
+func (m *Model) handleShowCharaListErrorMsg(msg ShowCharaListErrorMsg) (tea.Model, tea.Cmd) {
+	m.SetError(msg.Message)
 	m.State = StateCharaList
 	return m, nil
 }
@@ -791,6 +808,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case UpdateCharaListMsg:
 		return m.handleUpdateCharaListMsg(msg)
+	case ShowCharaListErrorMsg:
+		return m.handleShowCharaListErrorMsg(msg)
 	case UpdateListMsg:
 		return m.handleUpdateListMsg(msg)
 	case UpdateDownloadListMsg:
