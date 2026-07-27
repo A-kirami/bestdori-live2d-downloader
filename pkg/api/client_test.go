@@ -376,8 +376,17 @@ func TestIsLive2dAssetAvailable(t *testing.T) {
 		if r.Method != http.MethodHead {
 			t.Errorf("request method = %s, want %s", r.Method, http.MethodHead)
 		}
-		if r.URL.Path != "/live2d/chara/001_casual_rip/buildData.asset" {
-			t.Errorf("request path = %s", r.URL.Path)
+		switch r.URL.Path {
+		case "/live2d/chara/001_missing_rip/buildData.asset":
+			w.WriteHeader(http.StatusNotFound)
+			return
+		case "/live2d/chara/001_error_rip/buildData.asset":
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		case "/live2d/chara/001_html_rip/buildData.asset":
+			w.Header().Set("Content-Type", "text/html")
+			w.WriteHeader(http.StatusOK)
+			return
 		}
 		w.Header().Set("Content-Type", "application/octet-stream")
 		w.WriteHeader(http.StatusOK)
@@ -391,12 +400,42 @@ func TestIsLive2dAssetAvailable(t *testing.T) {
 	}
 	client := api.NewClient()
 
-	require.True(t, client.IsLive2dAssetAvailable(context.Background(), model.Live2dAsset{
+	available, err := client.IsLive2dAssetAvailable(context.Background(), model.Live2dAsset{
 		Server:  "jp",
 		Costume: "001_casual",
-	}))
-	require.False(t, client.IsLive2dAssetAvailable(context.Background(), model.Live2dAsset{
+	})
+	require.NoError(t, err)
+	require.True(t, available)
+
+	available, err = client.IsLive2dAssetAvailable(context.Background(), model.Live2dAsset{
+		Server:  "jp",
+		Costume: "001_missing",
+	})
+	require.NoError(t, err)
+	require.False(t, available)
+
+	for _, costume := range []string{"001_error", "001_html"} {
+		available, err = client.IsLive2dAssetAvailable(context.Background(), model.Live2dAsset{
+			Server:  "jp",
+			Costume: costume,
+		})
+		require.Error(t, err)
+		require.False(t, available)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	available, err = client.IsLive2dAssetAvailable(ctx, model.Live2dAsset{
+		Server:  "jp",
+		Costume: "001_casual",
+	})
+	require.ErrorIs(t, err, context.Canceled)
+	require.False(t, available)
+
+	available, err = client.IsLive2dAssetAvailable(context.Background(), model.Live2dAsset{
 		Server:  "unknown",
 		Costume: "001_casual",
-	}))
+	})
+	require.Error(t, err)
+	require.False(t, available)
 }

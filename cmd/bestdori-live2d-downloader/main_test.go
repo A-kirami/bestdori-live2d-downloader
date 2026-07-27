@@ -99,3 +99,23 @@ func TestLoadCharacterNamesInitializesOnceConcurrently(t *testing.T) {
 	require.Equal(t, int32(1), requestCount.Load())
 	require.Equal(t, "户山香澄", app.charaNames["1"])
 }
+
+func TestFilterValidCostumesReturnsAvailabilityError(t *testing.T) {
+	config.Init()
+	cfg := config.Get()
+	cfg.AssetServers = map[string]config.AssetServerConfig{
+		"jp": {BaseAssetsURL: "https://example.invalid"},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	app := &App{ctx: ctx, apiClient: api.NewClient()}
+
+	costumes, err := app.filterValidCostumes([]model.Live2dAsset{{
+		Server:  "jp",
+		Costume: "001_casual",
+	}})
+
+	require.ErrorIs(t, err, context.Canceled)
+	require.Empty(t, costumes)
+}

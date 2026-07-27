@@ -400,7 +400,13 @@ func (a *App) updateCharaCostumes(id int, firstName string, displayName string) 
 	a.tuiModel.ClearError()
 
 	// 过滤出可下载的服装（验证 buildData.asset 是否存在）
-	validCostumes := a.filterValidCostumes(costumes)
+	validCostumes, err := a.filterValidCostumes(costumes)
+	if err != nil {
+		log.DefaultLogger.Error().Int("charaID", id).Err(err).Msg("检查角色服装资源失败")
+		a.tuiModel.SetError(fmt.Sprintf("检查角色服装资源失败: %v", err))
+		a.tuiModel.State = tui.StateCharaList
+		return true
+	}
 
 	if len(validCostumes) == 0 {
 		log.DefaultLogger.Warn().Int("charaID", id).Msg("该角色没有可下载的 Live2D 模型")
@@ -460,10 +466,11 @@ func (a *App) updateCharaCostumes(id int, firstName string, displayName string) 
 }
 
 // filterValidCostumes 过滤出可下载的服装（并发验证 buildData.asset）.
-func (a *App) filterValidCostumes(costumes []model.Live2dAsset) []model.Live2dAsset {
+func (a *App) filterValidCostumes(costumes []model.Live2dAsset) ([]model.Live2dAsset, error) {
 	type result struct {
 		index int
 		valid bool
+		err   error
 	}
 
 	resultChan := make(chan result, len(costumes))
@@ -474,27 +481,30 @@ func (a *App) filterValidCostumes(costumes []model.Live2dAsset) []model.Live2dAs
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			valid := a.apiClient.IsLive2dAssetAvailable(a.ctx, c)
-			resultChan <- result{index: idx, valid: valid}
+			valid, err := a.apiClient.IsLive2dAssetAvailable(a.ctx, c)
+			resultChan <- result{index: idx, valid: valid, err: err}
 		}(i, costume)
 	}
 
 	// 收集结果（按原始顺序）
-	validFlags := make([]bool, len(costumes))
+	results := make([]result, len(costumes))
 	for range costumes {
 		r := <-resultChan
-		validFlags[r.index] = r.valid
+		results[r.index] = r
 	}
 
 	// 按原始顺序返回有效的服装
 	var validCostumes []model.Live2dAsset
-	for i, valid := range validFlags {
-		if valid {
+	for i, r := range results {
+		if r.err != nil {
+			return nil, fmt.Errorf("检查模型 %s 可用性失败: %w", costumes[i].Costume, r.err)
+		}
+		if r.valid {
 			validCostumes = append(validCostumes, costumes[i])
 		}
 	}
 
-	return validCostumes
+	return validCostumes, nil
 }
 
 // getCharaNames 获取角色名称，如果获取失败则使用默认名称.
