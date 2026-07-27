@@ -216,6 +216,18 @@ var defaultCharaColors = map[int]string{
 	601: "#DD33CC", // 奥泽美咲 (Michelle 真人形态)
 }
 
+const fallbackCharaColor = "#808080"
+
+func resolveCharaColor(charaID int, colorCode string) string {
+	if colorCode = strings.TrimSpace(colorCode); colorCode != "" {
+		return colorCode
+	}
+	if color, ok := defaultCharaColors[charaID]; ok {
+		return color
+	}
+	return fallbackCharaColor
+}
+
 // GetCharacterInfoList 获取所有角色信息列表（包含颜色）
 // 参数:
 //   - ctx: 上下文
@@ -254,13 +266,7 @@ func (c *Client) GetCharacterInfoList(ctx context.Context) ([]CharacterInfo, err
 		}
 
 		colorCode, _ := charaInfo["colorCode"].(string)
-
-		// 为没有颜色的角色添加硬编码颜色
-		if colorCode == "" {
-			if fallback, hasDefault := defaultCharaColors[id]; hasDefault {
-				colorCode = fallback
-			}
-		}
+		colorCode = resolveCharaColor(id, colorCode)
 
 		result = append(result, CharacterInfo{
 			ID:    id,
