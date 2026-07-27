@@ -41,7 +41,6 @@ const (
 	maxWidth = 80 // 最大宽度
 
 	// 状态常量.
-	StateInput       = "input"       // 输入状态
 	StateCharaList   = "chara_list"  // 角色列表状态
 	StateList        = "list"        // 列表状态
 	StateLoading     = "loading"     // 加载状态
@@ -160,13 +159,11 @@ type Model struct {
 	ItemOrder        []string                 // 下载项顺序列表
 	Width            int                      // 界面宽度
 	Quitting         bool                     // 是否正在退出程序
-	TextInput        textinput.Model          // 文本输入框组件
 	CharaList        list.Model               // 角色列表组件
 	Live2dList       list.Model               // Live2D 列表组件
 	DownloadList     list.Model               // 下载列表组件
 	SelectedIDs      []int                    // 选中的项目 ID 列表
 	State            string                   // 当前状态
-	SearchChan       chan string              // 搜索通道，用于处理搜索请求
 	SelectChan       chan []*SelectedItem     // 选择通道，用于处理选择请求
 	CharaSelectChan  chan int                 // 角色选择通道
 	Spinner          spinner.Model            // 加载动画组件
@@ -213,12 +210,6 @@ func (d DownloadDelegate) Render(w io.Writer, _ list.Model, _ int, item list.Ite
 // NewModel 创建新的 TUI 模型实例.
 func NewModel() Model {
 	ctx, cancel := context.WithCancel(context.Background())
-
-	ti := textinput.New()
-	ti.Placeholder = "输入 Live2D 模型名称直接下载"
-	ti.Focus()
-	ti.CharLimit = 156
-	ti.Width = 50
 
 	// 创建自定义的列表样式
 	delegate := list.NewDefaultDelegate()
@@ -270,13 +261,11 @@ func NewModel() Model {
 	return Model{
 		Items:           make(map[string]*DownloadItem),
 		ItemOrder:       []string{},
-		TextInput:       ti,
 		FilterInput:     filterInput,
 		CharaList:       charaList,
 		Live2dList:      l,
 		DownloadList:    downloadList,
 		State:           StateLoading,
-		SearchChan:      make(chan string, 1),
 		SelectChan:      make(chan []*SelectedItem, 1),
 		CharaSelectChan: make(chan int, 1),
 		Spinner:         s,
@@ -291,7 +280,7 @@ func NewModel() Model {
 
 // Init 初始化 TUI 模型.
 func (m *Model) Init() tea.Cmd {
-	return tea.Batch(textinput.Blink, m.Spinner.Tick)
+	return m.Spinner.Tick
 }
 
 // CostumeNameInfo 表示服装的多语言名称信息.
@@ -715,7 +704,7 @@ func (m *Model) handleCharaListState(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handleKeyMsg 处理键盘消息.
 func (m *Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if msg.String() == "ctrl+c" || (msg.String() == KeyEsc && m.State == StateInput) {
+	if msg.String() == "ctrl+c" {
 		close(m.cancelChan)
 		m.Cancel()
 		m.Quitting = true
@@ -723,9 +712,6 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch m.State {
-	case StateInput:
-		m.State = StateCharaList
-		return m.handleCharaListState(msg)
 	case StateCharaList:
 		return m.handleCharaListState(msg)
 	case StateLoading:
@@ -846,7 +832,7 @@ func (m *Model) View() string {
 	s.WriteString("\n\n")
 
 	switch m.State {
-	case StateInput, StateCharaList:
+	case StateCharaList:
 		// 自定义标题
 		s.WriteString(titleStyle.Render("选择角色"))
 		s.WriteString("\n\n")
@@ -1094,10 +1080,6 @@ func selectedLess(a, b *model.Live2dAsset) bool {
 	}
 
 	return sa < sb
-}
-
-func (m *Model) GetSearchChan() <-chan string {
-	return m.SearchChan
 }
 
 func (m *Model) GetSelectChan() <-chan []*SelectedItem {

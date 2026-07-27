@@ -1,5 +1,5 @@
 // Package main 是 Bestdori Live2D 下载器的主程序包
-// 该程序用于从 Bestdori 网站下载 Live2D 模型，支持角色搜索和直接下载
+// 该程序用于从 Bestdori 网站选择并下载 Live2D 模型
 package main
 
 import (
@@ -23,9 +23,6 @@ import (
 )
 
 const (
-	// SplitPartsCount 表示字符串分割后的预期部分数量.
-	SplitPartsCount = 2
-
 	// ErrDownloadCancelled 表示下载已取消的错误.
 	ErrDownloadCancelled = "下载已取消"
 )
@@ -196,7 +193,7 @@ func (a *App) loadCharacterList() {
 	if err != nil {
 		log.DefaultLogger.Error().Err(err).Msg("加载角色列表失败")
 		a.tuiModel.SetError(fmt.Sprintf("加载角色列表失败: %v", err))
-		a.tuiModel.State = tui.StateInput
+		a.tuiModel.State = tui.StateCharaList
 		return
 	}
 
@@ -536,117 +533,6 @@ func (a *App) getCharaNames(id int) (string, string) {
 	return firstName, displayName
 }
 
-func (a *App) resolveDirectDownloadAssets(modelNames []string) ([]*model.Live2dAsset, []string, error) {
-	assets := make([]*model.Live2dAsset, 0, len(modelNames))
-	invalidModels := make([]string, 0)
-
-	for _, name := range modelNames {
-		asset, exists, err := a.apiClient.GetLive2dAsset(a.ctx, name)
-		if err != nil {
-			return nil, nil, fmt.Errorf("验证模型失败: %w", err)
-		}
-		if !exists {
-			invalidModels = append(invalidModels, name)
-			continue
-		}
-		assets = append(assets, asset)
-	}
-
-	return assets, invalidModels, nil
-}
-
-func (a *App) shouldHandleAsDirectDownload(input string) (bool, error) {
-	if input == "" {
-		return false, nil
-	}
-
-	_, exists, err := a.apiClient.GetLive2dAsset(a.ctx, input)
-	if err != nil {
-		return false, fmt.Errorf("验证模型失败: %w", err)
-	}
-
-	return exists, nil
-}
-
-// handleDirectDownload 处理直接下载请求.
-func (a *App) handleDirectDownload(input string) bool {
-	log.DefaultLogger.Info().Str("input", input).Msg("开始直接下载Live2D")
-
-	// 分割输入字符串，支持空格、中文逗号和英文逗号作为分隔符
-	inputs := strings.FieldsFunc(input, func(r rune) bool {
-		return r == ' ' || r == ',' || r == '，'
-	})
-
-	// 移除每个模型名可能存在的 _rip 后缀
-	modelNames := make([]string, 0, len(inputs))
-	for _, name := range inputs {
-		name = strings.TrimSpace(name)
-		if name == "" {
-			continue
-		}
-		modelNames = append(modelNames, strings.TrimSuffix(name, "_rip"))
-	}
-
-	if len(modelNames) == 0 {
-		log.DefaultLogger.Error().Str("input", input).Msg("没有有效的模型名称")
-		a.tuiModel.SetError("没有有效的模型名称")
-		a.tuiModel.State = tui.StateInput
-		return true
-	}
-
-	assets, invalidModels, err := a.resolveDirectDownloadAssets(modelNames)
-	if err != nil {
-		log.DefaultLogger.Error().Strs("models", modelNames).Err(err).Msg("验证模型失败")
-		a.tuiModel.SetError(err.Error())
-		a.tuiModel.State = tui.StateInput
-		return true
-	}
-
-	// 如果有无效的模型，显示错误信息
-	if len(invalidModels) > 0 {
-		errorMsg := fmt.Sprintf("以下模型不存在: %s", strings.Join(invalidModels, ", "))
-		log.DefaultLogger.Error().Strs("invalidModels", invalidModels).Msg("发现无效的模型名称")
-		a.tuiModel.SetError(errorMsg)
-		a.tuiModel.State = tui.StateInput
-		return true
-	}
-
-	a.tuiModel.State = "downloading"
-	a.tuiModel.DownloadList.Title = "下载进度"
-
-	// 转换为 SelectedItem（直接下载时使用原始名称）
-	var selectedItems []*tui.SelectedItem
-	for _, asset := range assets {
-		selectedItems = append(selectedItems, &tui.SelectedItem{
-			Asset:       asset,
-			DisplayName: asset.String(),
-		})
-	}
-
-	// 使用批量下载功能处理多个模型
-	return a.handleBatchDownload(selectedItems)
-}
-
-// handleDownload 处理下载请求.
-func (a *App) handleDownload(input string) bool {
-	// 直接按模型名称下载
-	direct, err := a.shouldHandleAsDirectDownload(input)
-	if err != nil {
-		log.DefaultLogger.Error().Str("input", input).Err(err).Msg("验证模型失败")
-		a.tuiModel.SetError(err.Error())
-		a.tuiModel.State = tui.StateInput
-		return true
-	}
-	if direct {
-		return a.handleDirectDownload(input)
-	}
-
-	// 无效的模型名称
-	a.tuiModel.SetError(fmt.Sprintf("模型 \"%s\" 不存在", input))
-	a.tuiModel.State = tui.StateInput
-	return true
-}
-
 // downloadModel 下载单个模型.
 func (a *App) downloadModel(
 	asset *model.Live2dAsset,
@@ -756,7 +642,7 @@ func (a *App) Run() {
 	// 加载角色列表
 	go a.loadCharacterList()
 
-	// 处理用户输入和下载
+	// 处理角色选择和下载
 	for {
 		select {
 		case <-a.ctx.Done():
@@ -768,10 +654,6 @@ func (a *App) Run() {
 		case charaID := <-a.tuiModel.GetCharaSelectChan():
 			firstName, displayName := a.getCharaNames(charaID)
 			a.updateCharaCostumes(charaID, firstName, displayName)
-		case input := <-a.tuiModel.GetSearchChan():
-			if !a.handleDownload(input) {
-				return
-			}
 		case selectedItems := <-a.tuiModel.GetSelectChan():
 			if !a.handleBatchDownload(selectedItems) {
 				return
