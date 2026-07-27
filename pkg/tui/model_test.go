@@ -3,6 +3,7 @@ package tui_test
 import (
 	"testing"
 
+	"github.com/A-kirami/bestdori-live2d-downloader/pkg/config"
 	"github.com/A-kirami/bestdori-live2d-downloader/pkg/model"
 	"github.com/A-kirami/bestdori-live2d-downloader/pkg/tui"
 	tea "github.com/charmbracelet/bubbletea"
@@ -95,4 +96,14 @@ func TestCharacterSelectionEntersLoadingState(t *testing.T) {
 
 	require.Equal(t, tui.StateLoading, m.State)
 	require.Equal(t, 1, <-m.GetCharaSelectChan())
+}
+
+func TestNewModelUsesConfiguredNamingMode(t *testing.T) {
+	config.Init()
+	t.Cleanup(config.Init)
+	config.Get().NamingMode = config.NamingModeOriginal
+
+	m := tui.NewModel()
+
+	require.Equal(t, config.NamingModeOriginal, m.NamingMode)
 }

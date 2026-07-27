@@ -274,7 +274,7 @@ func NewModel() Model {
 		Cancel:          cancel,
 		TotalModels:     0,
 		CompletedModels: 0,
-		NamingMode:      config.NamingModeChinese,
+		NamingMode:      config.Get().NamingMode,
 	}
 }
 
