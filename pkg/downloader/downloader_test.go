@@ -229,3 +229,12 @@ func TestIsModelCompleteUsesNormalizedPhysicsFilename(t *testing.T) {
 	require.NoError(t, os.Remove(filepath.Join(dataPath, "physics.json")))
 	require.False(t, downloader.IsModelComplete(modelPath, buildData))
 }
+
+func TestIsModelCompleteRejectsDirectoriesNamedAsRequiredFiles(t *testing.T) {
+	modelPath := t.TempDir()
+	dataPath := filepath.Join(modelPath, "data")
+	require.NoError(t, os.MkdirAll(filepath.Join(dataPath, "model.moc"), 0750))
+	require.NoError(t, os.WriteFile(filepath.Join(modelPath, "model.json"), []byte("{}"), 0600))
+
+	require.False(t, downloader.IsModelComplete(modelPath, &model.BuildData{}))
+}

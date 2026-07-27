@@ -752,6 +752,11 @@ func (d *Downloader) GetAPIClient() *api.Client {
 	return d.apiClient
 }
 
+func isRegularFile(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
+}
+
 // IsModelComplete 检查模型目录是否已完整下载
 // 参数:
 //   - modelPath: 模型保存路径
@@ -764,7 +769,7 @@ func IsModelComplete(modelPath string, buildData *model.BuildData) bool {
 
 	// 检查 model.moc
 	modelFile := filepath.Join(dataPath, "model.moc")
-	if _, err := os.Stat(modelFile); os.IsNotExist(err) {
+	if !isRegularFile(modelFile) {
 		return false
 	}
 
@@ -772,7 +777,7 @@ func IsModelComplete(modelPath string, buildData *model.BuildData) bool {
 	texturePath := filepath.Join(dataPath, "textures")
 	for _, texture := range buildData.Textures {
 		file := filepath.Join(texturePath, texture.FileName)
-		if _, err := os.Stat(file); os.IsNotExist(err) {
+		if !isRegularFile(file) {
 			return false
 		}
 	}
@@ -781,7 +786,7 @@ func IsModelComplete(modelPath string, buildData *model.BuildData) bool {
 	motionPath := filepath.Join(dataPath, "motions")
 	for _, motion := range buildData.Motions {
 		file := filepath.Join(motionPath, motion.FileName)
-		if _, err := os.Stat(file); os.IsNotExist(err) {
+		if !isRegularFile(file) {
 			return false
 		}
 	}
@@ -790,21 +795,21 @@ func IsModelComplete(modelPath string, buildData *model.BuildData) bool {
 	expressionPath := filepath.Join(dataPath, "expressions")
 	for _, expression := range buildData.Expressions {
 		file := filepath.Join(expressionPath, expression.FileName)
-		if _, err := os.Stat(file); os.IsNotExist(err) {
+		if !isRegularFile(file) {
 			return false
 		}
 	}
 
 	// 检查 model.json
 	modelJSON := filepath.Join(modelPath, "model.json")
-	if _, err := os.Stat(modelJSON); os.IsNotExist(err) {
+	if !isRegularFile(modelJSON) {
 		return false
 	}
 
 	// 检查 physics.json（仅当存在物理数据时）
 	if buildData.Physics.FileName != "" {
 		physicsFile := filepath.Join(dataPath, physicsFileName)
-		if _, err := os.Stat(physicsFile); os.IsNotExist(err) {
+		if !isRegularFile(physicsFile) {
 			return false
 		}
 	}
