@@ -368,21 +368,19 @@ func (a *App) updateProgressComplete(displayName string, data *model.BuildData) 
 }
 
 // updateCharaCostumes 更新角色服装列表.
-//
-//nolint:unparam // 返回值预留用于未来扩展
-func (a *App) updateCharaCostumes(id int, firstName string, displayName string) bool {
+func (a *App) updateCharaCostumes(id int, firstName string, displayName string) {
 	// 获取角色服装列表
 	costumes, err := a.apiClient.GetCharaCostumes(a.ctx, id)
 	if err != nil {
 		log.DefaultLogger.Error().Int("charaID", id).Err(err).Msg("获取角色服装列表失败")
 		a.program.Send(tui.ShowCharaListErrorMsg{Message: fmt.Sprintf("获取角色服装列表失败: %v", err)})
-		return true
+		return
 	}
 
 	if len(costumes) == 0 {
 		log.DefaultLogger.Warn().Int("charaID", id).Msg("未找到该角色的 Live2D 模型")
 		a.program.Send(tui.ShowCharaListErrorMsg{Message: "未找到该角色的 Live2D 模型"})
-		return true
+		return
 	}
 
 	// 过滤出可下载的服装（验证 buildData.asset 是否存在）
@@ -390,13 +388,13 @@ func (a *App) updateCharaCostumes(id int, firstName string, displayName string) 
 	if err != nil {
 		log.DefaultLogger.Error().Int("charaID", id).Err(err).Msg("检查角色服装资源失败")
 		a.program.Send(tui.ShowCharaListErrorMsg{Message: fmt.Sprintf("检查角色服装资源失败: %v", err)})
-		return true
+		return
 	}
 
 	if len(validCostumes) == 0 {
 		log.DefaultLogger.Warn().Int("charaID", id).Msg("该角色没有可下载的 Live2D 模型")
 		a.program.Send(tui.ShowCharaListErrorMsg{Message: "该角色没有可下载的 Live2D 模型"})
-		return true
+		return
 	}
 
 	var costumeAssets []*model.Live2dAsset
@@ -444,8 +442,6 @@ func (a *App) updateCharaCostumes(id int, firstName string, displayName string) 
 		CharaName:       firstName,
 		ExtraCharaName:  extraCharaName,
 	})
-
-	return true
 }
 
 // filterValidCostumes 过滤出可下载的服装（并发验证 buildData.asset）.
