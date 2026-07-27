@@ -229,50 +229,47 @@ func (a *App) getLive2dPath(live2dName string, namingMode config.NamingMode) (st
 
 	// 使用中文命名模式
 	if namingMode == config.NamingModeChinese {
-		return a.getLive2dPathChinese(live2dName, parsed.CharaID, parsed.Costume)
+		path := a.getChineseLive2dPath(live2dName, parsed)
+		log.DefaultLogger.Info().Str("path", path).Msg("获取Live2D路径成功（中文命名）")
+		return path, nil
 	}
 
 	// 原始命名模式
-	return a.getLive2dPathOriginal(live2dName, parsed.CharaID)
+	path := a.getOriginalLive2dPaths(live2dName, parsed.CharaID)[0]
+	log.DefaultLogger.Info().Str("path", path).Msg("获取Live2D路径成功")
+	return path, nil
 }
 
-// getLive2dPathChinese 使用中文命名获取保存路径.
-func (a *App) getLive2dPathChinese(live2dName string, charaID int, costume string) (string, error) {
+// getChineseLive2dPath 返回中文命名模式下的保存路径.
+func (a *App) getChineseLive2dPath(live2dName string, parsed *parsedLive2d) string {
 	// 加载中文名称映射
 	a.loadCharacterNames()
 	a.loadCostumeNames()
 
 	// 获取角色中文名
-	charaName := fmt.Sprintf("chara_%03d", charaID)
-	if name, ok := a.charaNames[strconv.Itoa(charaID)]; ok && name != "" {
+	charaName := fmt.Sprintf("chara_%03d", parsed.CharaID)
+	if name, ok := a.charaNames[strconv.Itoa(parsed.CharaID)]; ok && name != "" {
 		charaName = sanitizeFilename(name)
 	}
 
 	// 获取服装中文名（使用完整的 live2dName 进行查找）
-	costumeName := sanitizeFilename(a.lookupCostumeName(live2dName, costume))
+	costumeName := sanitizeFilename(a.lookupCostumeName(live2dName, parsed.Costume))
 
-	path := filepath.Join(config.Get().Live2dSavePath, charaName, costumeName)
-	log.DefaultLogger.Info().Str("path", path).Msg("获取Live2D路径成功（中文命名）")
-	return path, nil
+	return filepath.Join(config.Get().Live2dSavePath, charaName, costumeName)
 }
 
-// getLive2dPathOriginal 使用原始命名获取保存路径.
-func (a *App) getLive2dPathOriginal(live2dName string, charaID int) (string, error) {
+// getOriginalLive2dPaths 按优先级返回原始命名模式的保存路径.
+func (a *App) getOriginalLive2dPaths(live2dName string, charaID int) []string {
+	savePath := config.Get().Live2dSavePath
+	idPath := filepath.Join(savePath, fmt.Sprintf("chara_%03d", charaID), sanitizeFilename(live2dName))
 	charaName := a.localizedCharacterName(charaID)
 	if charaName == "" {
 		log.DefaultLogger.Warn().Int("charaID", charaID).Msg("获取角色信息失败，使用角色ID作为目录名")
-		path := filepath.Join(
-			config.Get().Live2dSavePath,
-			fmt.Sprintf("chara_%03d", charaID),
-			sanitizeFilename(live2dName),
-		)
-		log.DefaultLogger.Info().Str("path", path).Msg("获取Live2D路径成功")
-		return path, nil
+		return []string{idPath}
 	}
 
-	path := filepath.Join(config.Get().Live2dSavePath, sanitizeFilename(charaName), sanitizeFilename(live2dName))
-	log.DefaultLogger.Info().Str("path", path).Msg("获取Live2D路径成功")
-	return path, nil
+	namePath := filepath.Join(savePath, sanitizeFilename(charaName), sanitizeFilename(live2dName))
+	return []string{namePath, idPath}
 }
 
 // hasCompleteModel 检查当前或其他命名模式下是否已有完整模型.
@@ -288,35 +285,10 @@ func (a *App) hasCompleteModel(live2dName string, currentPath string, buildData 
 		return false
 	}
 
-	savePath := config.Get().Live2dSavePath
-
-	// 尝试中文命名路径
-	a.loadCharacterNames()
-	a.loadCostumeNames()
-	charaName := fmt.Sprintf("chara_%03d", parsed.CharaID)
-	if charaNameVal, charaNameOk := a.charaNames[strconv.Itoa(parsed.CharaID)]; charaNameOk && charaNameVal != "" {
-		charaName = sanitizeFilename(charaNameVal)
-	}
-	// 使用完整的 live2dName 查找中文名（与 getLive2dPathChinese 一致）
-	costumeName := sanitizeFilename(a.lookupCostumeName(live2dName, parsed.Costume))
-	chinesePath := filepath.Join(savePath, charaName, costumeName)
-	if chinesePath != currentPath {
-		if downloader.IsModelComplete(chinesePath, buildData) {
-			return true
-		}
-	}
-
-	// 尝试原始命名路径（使用角色全名）
-	fallbackName := a.localizedCharacterName(parsed.CharaID)
-	originalPath := filepath.Join(savePath, sanitizeFilename(fallbackName), sanitizeFilename(live2dName))
-	if fallbackName != "" && originalPath != currentPath && downloader.IsModelComplete(originalPath, buildData) {
-		return true
-	}
-
-	// 尝试原始命名路径（使用角色ID）
-	idPath := filepath.Join(savePath, fmt.Sprintf("chara_%03d", parsed.CharaID), sanitizeFilename(live2dName))
-	if idPath != currentPath {
-		if downloader.IsModelComplete(idPath, buildData) {
+	paths := []string{a.getChineseLive2dPath(live2dName, parsed)}
+	paths = append(paths, a.getOriginalLive2dPaths(live2dName, parsed.CharaID)...)
+	for _, path := range paths {
+		if path != currentPath && downloader.IsModelComplete(path, buildData) {
 			return true
 		}
 	}

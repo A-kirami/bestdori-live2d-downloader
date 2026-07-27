@@ -60,7 +60,7 @@ func TestGetLive2dPathOriginalPreservesAssetName(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, logger.Close()) })
 
 	app := &App{charaNames: map[string]string{"1": "户山香澄"}}
-	path, err := app.getLive2dPathOriginal("001_casual", 1)
+	path, err := app.getLive2dPath("001_casual", config.NamingModeOriginal)
 
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(savePath, "户山香澄", "001_casual"), path)
