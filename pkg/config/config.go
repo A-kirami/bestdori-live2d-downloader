@@ -42,9 +42,6 @@ type Config struct {
 	// 下载配置
 	MaxConcurrentDownloads int // 单个模型下载时的最大并发文件下载数
 	MaxConcurrentModels    int // 最大并发模型下载数
-
-	// 命名配置
-	NamingMode NamingMode // 文件夹命名模式
 }
 
 var (
@@ -94,9 +91,6 @@ func DefaultConfig() *Config {
 		// 下载配置
 		MaxConcurrentDownloads: 20,
 		MaxConcurrentModels:    3,
-
-		// 命名配置
-		NamingMode: NamingModeChinese,
 	}
 }
 
