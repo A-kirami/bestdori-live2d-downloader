@@ -354,25 +354,20 @@ func (a *App) updateCharaCostumes(id int, firstName string, displayName string) 
 		return
 	}
 
-	// 过滤出可下载的服装（验证 buildData.asset 是否存在）
-	validCostumes, err := a.filterValidCostumes(costumes)
-	if err != nil && len(validCostumes) == 0 {
-		log.DefaultLogger.Error().Int("charaID", id).Err(err).Msg("检查角色服装资源失败")
-		a.program.Send(tui.ShowCharaListErrorMsg{Message: fmt.Sprintf("检查角色服装资源失败: %v", err)})
-		return
-	}
+	// 排除明确不存在的资源；检查失败的条目仍保留在列表中
+	visibleCostumes, err := a.excludeMissingCostumes(costumes)
 	if err != nil {
-		log.DefaultLogger.Warn().Int("charaID", id).Err(err).Msg("部分角色服装资源检查失败，将保留可用模型")
+		log.DefaultLogger.Warn().Int("charaID", id).Err(err).Msg("部分角色服装资源检查失败，将保留未确认模型")
 	}
 
-	if len(validCostumes) == 0 {
+	if len(visibleCostumes) == 0 {
 		log.DefaultLogger.Warn().Int("charaID", id).Msg("该角色没有可下载的 Live2D 模型")
 		a.program.Send(tui.ShowCharaListErrorMsg{Message: "该角色没有可下载的 Live2D 模型"})
 		return
 	}
 
 	var costumeAssets []*model.Live2dAsset
-	for _, live2d := range validCostumes {
+	for _, live2d := range visibleCostumes {
 		// create a copy to take address
 		aCopy := live2d
 		costumeAssets = append(costumeAssets, &aCopy)
@@ -380,8 +375,8 @@ func (a *App) updateCharaCostumes(id int, firstName string, displayName string) 
 
 	log.DefaultLogger.Info().
 		Str("charaName", firstName).
-		Int("costumesCount", len(validCostumes)).
-		Int("filteredCount", len(costumes)-len(validCostumes)).
+		Int("costumesCount", len(visibleCostumes)).
+		Int("filteredCount", len(costumes)-len(visibleCostumes)).
 		Msg("找到角色服装列表")
 
 	// 加载服装名称信息
@@ -402,8 +397,8 @@ func (a *App) updateCharaCostumes(id int, firstName string, displayName string) 
 	})
 }
 
-// filterValidCostumes 过滤出可下载的服装（并发验证 buildData.asset）.
-func (a *App) filterValidCostumes(costumes []model.Live2dAsset) ([]model.Live2dAsset, error) {
+// excludeMissingCostumes 排除已确认不存在的服装；检查失败的条目仍保留.
+func (a *App) excludeMissingCostumes(costumes []model.Live2dAsset) ([]model.Live2dAsset, error) {
 	type result struct {
 		index int
 		valid bool
@@ -430,20 +425,28 @@ func (a *App) filterValidCostumes(costumes []model.Live2dAsset) ([]model.Live2dA
 		results[r.index] = r
 	}
 
-	// 按原始顺序返回有效的服装
-	var validCostumes []model.Live2dAsset
-	var checkErrors []error
+	// 按原始顺序返回未确认缺失的服装
+	var visibleCostumes []model.Live2dAsset
+	var firstCheckError error
+	failedChecks := 0
 	for i, r := range results {
 		if r.err != nil {
-			checkErrors = append(checkErrors, fmt.Errorf("检查模型 %s 可用性失败: %w", costumes[i].Costume, r.err))
+			visibleCostumes = append(visibleCostumes, costumes[i])
+			failedChecks++
+			if firstCheckError == nil {
+				firstCheckError = fmt.Errorf("检查模型 %s 可用性失败: %w", costumes[i].Costume, r.err)
+			}
 			continue
 		}
 		if r.valid {
-			validCostumes = append(validCostumes, costumes[i])
+			visibleCostumes = append(visibleCostumes, costumes[i])
 		}
 	}
 
-	return validCostumes, errors.Join(checkErrors...)
+	if failedChecks > 1 {
+		return visibleCostumes, fmt.Errorf("%d 个模型资源检查失败，首个错误: %w", failedChecks, firstCheckError)
+	}
+	return visibleCostumes, firstCheckError
 }
 
 // getCharaNames 获取角色名称，如果获取失败则使用默认名称.

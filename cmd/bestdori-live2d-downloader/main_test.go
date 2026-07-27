@@ -156,7 +156,7 @@ func TestLoadCostumeNamesRetriesAfterFailure(t *testing.T) {
 	require.Greater(t, requests.Load(), int32(1))
 }
 
-func TestFilterValidCostumesReturnsAvailabilityError(t *testing.T) {
+func TestExcludeMissingCostumesKeepsUncheckedResult(t *testing.T) {
 	config.Init()
 	cfg := config.Get()
 	cfg.AssetServers = map[string]config.AssetServerConfig{
@@ -167,19 +167,24 @@ func TestFilterValidCostumesReturnsAvailabilityError(t *testing.T) {
 	cancel()
 	app := &App{ctx: ctx, apiClient: api.NewClient()}
 
-	costumes, err := app.filterValidCostumes([]model.Live2dAsset{{
+	input := []model.Live2dAsset{{
 		Server:  "jp",
 		Costume: "001_casual",
-	}})
+	}}
+	costumes, err := app.excludeMissingCostumes(input)
 
 	require.ErrorIs(t, err, context.Canceled)
-	require.Empty(t, costumes)
+	require.Equal(t, input, costumes)
 }
 
-func TestFilterValidCostumesKeepsAvailableResultsWhenOneCheckFails(t *testing.T) {
+func TestExcludeMissingCostumesOnlyRemovesNotFound(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/live2d/chara/001_error_rip/buildData.asset" {
+		switch r.URL.Path {
+		case "/live2d/chara/001_error_rip/buildData.asset":
 			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		case "/live2d/chara/001_missing_rip/buildData.asset":
+			w.WriteHeader(http.StatusNotFound)
 			return
 		}
 		w.Header().Set("Content-Type", "application/octet-stream")
@@ -193,11 +198,15 @@ func TestFilterValidCostumesKeepsAvailableResultsWhenOneCheckFails(t *testing.T)
 	}
 	app := &App{ctx: context.Background(), apiClient: api.NewClient()}
 
-	costumes, err := app.filterValidCostumes([]model.Live2dAsset{
+	costumes, err := app.excludeMissingCostumes([]model.Live2dAsset{
 		{Server: "jp", Costume: "001_casual"},
 		{Server: "jp", Costume: "001_error"},
+		{Server: "jp", Costume: "001_missing"},
 	})
 
 	require.Error(t, err)
-	require.Equal(t, []model.Live2dAsset{{Server: "jp", Costume: "001_casual"}}, costumes)
+	require.Equal(t, []model.Live2dAsset{
+		{Server: "jp", Costume: "001_casual"},
+		{Server: "jp", Costume: "001_error"},
+	}, costumes)
 }
