@@ -155,13 +155,12 @@ func sanitizeFilename(name string) string {
 
 // parsedLive2d 解析后的 Live2D 名称.
 type parsedLive2d struct {
-	CharaID     int
-	CostumePart string
-	Costume     string
+	CharaID int
+	Costume string
 }
 
 // parseLive2dName 解析 Live2D 名称为角色ID和服装部分.
-// 例如 "005_live_event_07_sr" → {CharaID: 5, CostumePart: "live_event_07_sr", Costume: "live_event_07_sr"}.
+// 例如 "005_live_event_07_sr" → {CharaID: 5, Costume: "live_event_07_sr"}.
 func parseLive2dName(live2dName string) (*parsedLive2d, bool) {
 	parts := strings.Split(live2dName, "_")
 	if len(parts) < 2 {
@@ -187,9 +186,8 @@ func parseLive2dName(live2dName string) (*parsedLive2d, bool) {
 	costume := strings.Trim(strings.Join([]string{prefix, costumePart}, "_"), "_")
 
 	return &parsedLive2d{
-		CharaID:     charaID,
-		CostumePart: costumePart,
-		Costume:     costume,
+		CharaID: charaID,
+		Costume: costume,
 	}, true
 }
 
@@ -249,7 +247,7 @@ func (a *App) getLive2dPath(live2dName string) (string, error) {
 	}
 
 	// 原始命名模式
-	return a.getLive2dPathOriginal(live2dName, parsed.CharaID, parsed.Costume, parsed.CostumePart)
+	return a.getLive2dPathOriginal(live2dName, parsed.CharaID)
 }
 
 // getLive2dPathChinese 使用中文命名获取保存路径.
@@ -273,16 +271,20 @@ func (a *App) getLive2dPathChinese(live2dName string, charaID int, costume strin
 }
 
 // getLive2dPathOriginal 使用原始命名获取保存路径.
-func (a *App) getLive2dPathOriginal(_ string, charaID int, costume string, costumePart string) (string, error) {
+func (a *App) getLive2dPathOriginal(live2dName string, charaID int) (string, error) {
 	charaName := a.localizedCharacterName(charaID)
 	if charaName == "" {
 		log.DefaultLogger.Warn().Int("charaID", charaID).Msg("获取角色信息失败，使用角色ID作为目录名")
-		path := filepath.Join(config.Get().Live2dSavePath, fmt.Sprintf("chara_%03d", charaID), costumePart)
+		path := filepath.Join(
+			config.Get().Live2dSavePath,
+			fmt.Sprintf("chara_%03d", charaID),
+			sanitizeFilename(live2dName),
+		)
 		log.DefaultLogger.Info().Str("path", path).Msg("获取Live2D路径成功")
 		return path, nil
 	}
 
-	path := filepath.Join(config.Get().Live2dSavePath, sanitizeFilename(charaName), sanitizeFilename(costume))
+	path := filepath.Join(config.Get().Live2dSavePath, sanitizeFilename(charaName), sanitizeFilename(live2dName))
 	log.DefaultLogger.Info().Str("path", path).Msg("获取Live2D路径成功")
 	return path, nil
 }
@@ -320,13 +322,13 @@ func (a *App) hasCompleteModel(live2dName string, currentPath string, buildData 
 
 	// 尝试原始命名路径（使用角色全名）
 	fallbackName := a.localizedCharacterName(parsed.CharaID)
-	originalPath := filepath.Join(savePath, sanitizeFilename(fallbackName), sanitizeFilename(parsed.Costume))
+	originalPath := filepath.Join(savePath, sanitizeFilename(fallbackName), sanitizeFilename(live2dName))
 	if fallbackName != "" && originalPath != currentPath && downloader.IsModelComplete(originalPath, buildData) {
 		return true
 	}
 
 	// 尝试原始命名路径（使用角色ID）
-	idPath := filepath.Join(savePath, fmt.Sprintf("chara_%03d", parsed.CharaID), sanitizeFilename(parsed.CostumePart))
+	idPath := filepath.Join(savePath, fmt.Sprintf("chara_%03d", parsed.CharaID), sanitizeFilename(live2dName))
 	if idPath != currentPath {
 		if downloader.IsModelComplete(idPath, buildData) {
 			return true

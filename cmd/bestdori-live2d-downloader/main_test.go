@@ -170,6 +170,18 @@ func TestHasCompleteModelFindsOtherNamingModeWithoutMovingIt(t *testing.T) {
 	require.DirExists(t, chinesePath)
 }
 
+func TestGetLive2dPathOriginalPreservesAssetName(t *testing.T) {
+	config.Init()
+	savePath := t.TempDir()
+	config.Get().Live2dSavePath = savePath
+
+	app := &App{charaNames: map[string]string{"1": "户山香澄"}}
+	path, err := app.getLive2dPathOriginal("001_casual", 1)
+
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(savePath, "户山香澄", "001_casual"), path)
+}
+
 func TestLoadCharacterNamesInitializesOnceConcurrently(t *testing.T) {
 	logger, err := log.New(t.TempDir())
 	require.NoError(t, err)
