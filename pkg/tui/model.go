@@ -590,6 +590,10 @@ func (m *Model) handleDownloadingState(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 //
 //nolint:gocognit // 复杂的列表更新逻辑
 func (m *Model) handleUpdateListMsg(msg UpdateListMsg) (tea.Model, tea.Cmd) {
+	if m.State != StateLoading {
+		return m, nil
+	}
+
 	m.CurrentCharaID = msg.CharaID
 	m.CurrentCharaName = msg.CharaName
 	m.ExtraCharaName = msg.ExtraCharaName
@@ -683,6 +687,10 @@ func (m *Model) handleUpdateCharaListMsg(msg UpdateCharaListMsg) (tea.Model, tea
 
 // handleShowCharaListErrorMsg 显示角色列表加载错误.
 func (m *Model) handleShowCharaListErrorMsg(msg ShowCharaListErrorMsg) (tea.Model, tea.Cmd) {
+	if m.State != StateLoading {
+		return m, nil
+	}
+
 	m.SetError(msg.Message)
 	m.State = StateCharaList
 	return m, nil

@@ -39,6 +39,26 @@ func TestShowCharaListErrorMsg(t *testing.T) {
 	require.Equal(t, "加载失败", m.ErrorMessage)
 }
 
+func TestCharacterLoadResultIsIgnoredAfterReturningToCharacterList(t *testing.T) {
+	t.Parallel()
+
+	m := tui.NewModel()
+	m.Update(tui.UpdateCharaListMsg{Characters: []model.CharacterInfo{{ID: 1, Name: "户山香澄"}}})
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+
+	m.Update(tui.UpdateListMsg{
+		Items:     []*model.Live2dAsset{{Server: "jp", Costume: "001_casual"}},
+		CharaID:   1,
+		CharaName: "香澄",
+	})
+	m.Update(tui.ShowCharaListErrorMsg{Message: "旧请求失败"})
+
+	require.Equal(t, tui.StateCharaList, m.State)
+	require.Zero(t, m.CurrentCharaID)
+	require.Empty(t, m.ErrorMessage)
+}
+
 func TestFilteringPreservesSelections(t *testing.T) {
 	t.Parallel()
 
