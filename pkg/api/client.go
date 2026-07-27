@@ -306,6 +306,68 @@ func selectLocalizedName(names []any) string {
 	return ""
 }
 
+func parseCostumeNameData(
+	costumeData map[string]any,
+) (map[string]string, map[string]string, map[string]*CostumeNameInfo) {
+	names := make(map[string]string)
+	japaneseNames := make(map[string]string)
+	nameInfo := make(map[string]*CostumeNameInfo)
+
+	for _, value := range costumeData {
+		costume, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		bundleName, _ := costume["assetBundleName"].(string)
+		descriptions, ok := costume["description"].([]any)
+		if bundleName == "" || !ok || len(descriptions) == 0 {
+			continue
+		}
+
+		info := &CostumeNameInfo{Original: bundleName}
+		info.Japanese, _ = descriptions[0].(string)
+		info.Japanese = strings.TrimSpace(info.Japanese)
+		if len(descriptions) > 1 {
+			info.English, _ = descriptions[1].(string)
+			info.English = strings.TrimSpace(info.English)
+		}
+		info.Chinese = selectLocalizedName(descriptions)
+		nameInfo[bundleName] = info
+
+		if info.Chinese != "" {
+			names[bundleName] = info.Chinese
+		}
+		if info.Japanese != "" {
+			japaneseNames[bundleName] = info.Japanese
+		}
+	}
+
+	return names, japaneseNames, nameInfo
+}
+
+func completeCostumeNameInfo(
+	nameInfo map[string]*CostumeNameInfo,
+	live2dNames map[string]bool,
+	eventNames map[int]string,
+) {
+	for live2dName := range live2dNames {
+		if _, exists := nameInfo[live2dName]; exists {
+			continue
+		}
+		nameToProcess := strings.TrimPrefix(live2dName, "bili_")
+		parts := strings.SplitN(nameToProcess, "_", 2)
+		if len(parts) < 2 {
+			continue
+		}
+		if translated := naming.TranslateCostumeSuffix(parts[1], eventNames); translated != "" {
+			nameInfo[live2dName] = &CostumeNameInfo{
+				Original: live2dName,
+				Chinese:  translated,
+			}
+		}
+	}
+}
+
 // collectAllLive2dNames 收集所有 Live2D 名称
 // 从角色 API 的 seasonCostumeListMap 和资源索引中收集.
 //
@@ -398,142 +460,37 @@ func (c *Client) collectEventNames(ctx context.Context) map[int]string {
 	return eventNames
 }
 
-// GetCostumeNameInfo 获取所有服装的多语言名称信息
-// 返回 map[live2dAssetBundleName]CostumeNameInfo
-// 参数:
-//   - ctx: 上下文
-//
-// 返回:
-//   - map[string]*CostumeNameInfo: Live2D服装名到多语言名称信息的映射
-//   - error: 错误信息
-//
-//nolint:gocognit // 复杂的多语言映射逻辑
-func (c *Client) GetCostumeNameInfo(ctx context.Context) (map[string]*CostumeNameInfo, error) {
-	costumeURL := "https://bestdori.com/api/costumes/all.5.json"
-	costumeData, err := c.FetchData(ctx, costumeURL, "costume_names_5.json")
-	if err != nil {
-		return nil, fmt.Errorf("获取服装数据失败: %w", err)
-	}
-
-	// 从服装 API 建立 assetBundleName -> 名称信息
-	names := make(map[string]*CostumeNameInfo)
-	for _, info := range costumeData {
-		costumeInfo, ok := info.(map[string]any)
-		if !ok {
-			continue
-		}
-		bundleName, _ := costumeInfo["assetBundleName"].(string)
-		if bundleName == "" {
-			continue
-		}
-		descList, ok := costumeInfo["description"].([]any)
-		if !ok || len(descList) < 1 {
-			continue
-		}
-
-		nameInfo := &CostumeNameInfo{Original: bundleName}
-
-		// 获取各语言描述
-		if len(descList) > 0 {
-			nameInfo.Japanese, _ = descList[0].(string)
-			nameInfo.Japanese = strings.TrimSpace(nameInfo.Japanese)
-		}
-		if len(descList) > 1 {
-			nameInfo.English, _ = descList[1].(string)
-			nameInfo.English = strings.TrimSpace(nameInfo.English)
-		}
-		nameInfo.Chinese = selectLocalizedName(descList)
-
-		names[bundleName] = nameInfo
-	}
-
-	live2dNames, err := c.collectAllLive2dNames(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	eventNames := c.collectEventNames(ctx)
-
-	// 为没有直接匹配的 Live2D 名补充硬编码映射
-	for live2dName := range live2dNames {
-		if _, exists := names[live2dName]; exists {
-			continue
-		}
-		// 提取后缀
-		parts := strings.SplitN(live2dName, "_", 2)
-		if len(parts) < 2 {
-			continue
-		}
-		suffix := parts[1]
-
-		// 使用模式匹配翻译（传入 eventNames）
-		if translated := naming.TranslateCostumeSuffix(suffix, eventNames); translated != "" {
-			names[live2dName] = &CostumeNameInfo{
-				Original: live2dName,
-				Chinese:  translated,
-			}
-		}
-	}
-
-	return names, nil
-}
-
-// GetCostumeNames 获取所有服装的中文名称映射
-// 返回 map[live2dAssetBundleName]chineseDescription
+// GetCostumeNames 获取服装的展示名称和多语言搜索信息
 // 策略：直接用 assetBundleName 匹配，优先简体中文(index 3)，无则繁体中文(index 2)，都没有则查硬编码表
 // 参数:
 //   - ctx: 上下文
 //
 // 返回:
-//   - map[string]string: Live2D服装名到中文描述的映射
+//   - map[string]string: Live2D服装名到展示名称的映射
+//   - map[string]*CostumeNameInfo: Live2D服装名到多语言信息的映射
 //   - error: 错误信息
 //
 //nolint:gocognit,gocyclo,cyclop,funlen // 复杂的多语言映射逻辑
-func (c *Client) GetCostumeNames(ctx context.Context) (map[string]string, error) {
+func (c *Client) GetCostumeNames(
+	ctx context.Context,
+) (map[string]string, map[string]*CostumeNameInfo, error) {
 	costumeURL := "https://bestdori.com/api/costumes/all.5.json"
 	costumeData, err := c.FetchData(ctx, costumeURL, "costume_names_5.json")
 	if err != nil {
-		return nil, fmt.Errorf("获取服装数据失败: %w", err)
+		return nil, nil, fmt.Errorf("获取服装数据失败: %w", err)
 	}
 
-	// 从服装 API 建立 assetBundleName -> 中文描述
-	// 同时收集日语名称，用于后续中文名冲突消歧
-	names := make(map[string]string)
-	jpnNames := make(map[string]string)
-	for _, info := range costumeData {
-		costumeInfo, ok := info.(map[string]any)
-		if !ok {
-			continue
-		}
-		bundleName, _ := costumeInfo["assetBundleName"].(string)
-		if bundleName == "" {
-			continue
-		}
-		descList, ok := costumeInfo["description"].([]any)
-		if !ok || len(descList) == 0 {
-			continue
-		}
-		// 收集日语名称（用于同名消歧）
-		if len(descList) > 0 {
-			japaneseName, _ := descList[0].(string)
-			if japaneseName = strings.TrimSpace(japaneseName); japaneseName != "" {
-				jpnNames[bundleName] = japaneseName
-			}
-		}
-		// 优先级：简体中文(3) > 繁体中文(2) > 日语(0) > 英语(1)
-		if desc := selectLocalizedName(descList); desc != "" {
-			names[bundleName] = desc
-		}
-	}
+	names, japaneseNames, nameInfo := parseCostumeNameData(costumeData)
 
 	live2dNames, err := c.collectAllLive2dNames(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// 为没有直接匹配的 Live2D 名补充通用服装映射
 
 	eventNames := c.collectEventNames(ctx)
+	completeCostumeNameInfo(nameInfo, live2dNames, eventNames)
 
 	// 预计算每个角色+活动的剧情编号数量
 	charaEventStoryNumbers := make(map[string]map[string]bool)
@@ -654,14 +611,14 @@ func (c *Client) GetCostumeNames(ctx context.Context) (map[string]string, error)
 				continue
 			}
 			for _, live2dName := range live2dNamesList {
-				if jpnName, ok := jpnNames[live2dName]; ok && jpnName != "" {
-					names[live2dName] = chineseName + "(" + jpnName + ")"
+				if japaneseName, ok := japaneseNames[live2dName]; ok && japaneseName != "" {
+					names[live2dName] = chineseName + "(" + japaneseName + ")"
 				}
 			}
 		}
 	}
 
-	return names, nil
+	return names, nameInfo, nil
 }
 
 // GetChara 获取指定角色的详细信息

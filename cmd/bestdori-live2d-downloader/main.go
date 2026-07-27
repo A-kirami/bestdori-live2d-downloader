@@ -105,25 +105,17 @@ func (a *App) loadCostumeNames() {
 			return
 		}
 
-		// 加载中文名称映射（用于显示和文件夹命名）
-		names, err := a.apiClient.GetCostumeNames(a.ctx)
+		names, nameInfo, err := a.apiClient.GetCostumeNames(a.ctx)
 		if err != nil {
-			log.DefaultLogger.Warn().Err(err).Msg("加载服装中文名失败，将使用原始名称")
+			log.DefaultLogger.Warn().Err(err).Msg("加载服装名称失败，将使用原始名称")
 			a.costumeNames = make(map[string]string)
-		} else {
-			a.costumeNames = names
-			log.DefaultLogger.Info().Int("count", len(names)).Msg("加载服装中文名成功")
+			a.costumeNameInfo = make(map[string]*api.CostumeNameInfo)
+			return
 		}
 
-		// 加载多语言名称信息（用于搜索）
-		nameInfo, err := a.apiClient.GetCostumeNameInfo(a.ctx)
-		if err != nil {
-			log.DefaultLogger.Warn().Err(err).Msg("加载服装名称信息失败")
-			a.costumeNameInfo = make(map[string]*api.CostumeNameInfo)
-		} else {
-			a.costumeNameInfo = nameInfo
-			log.DefaultLogger.Info().Int("count", len(nameInfo)).Msg("加载服装名称信息成功")
-		}
+		a.costumeNames = names
+		a.costumeNameInfo = nameInfo
+		log.DefaultLogger.Info().Int("count", len(names)).Msg("加载服装名称成功")
 	})
 }
 
