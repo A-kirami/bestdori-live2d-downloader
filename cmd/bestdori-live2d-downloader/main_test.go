@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -17,6 +19,12 @@ import (
 	"github.com/A-kirami/bestdori-live2d-downloader/pkg/model"
 	"github.com/stretchr/testify/require"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
 
 func TestHasCompleteModelFindsOtherNamingModeWithoutMovingIt(t *testing.T) {
 	config.Init()
@@ -98,6 +106,56 @@ func TestLoadCharacterNamesInitializesOnceConcurrently(t *testing.T) {
 
 	require.Equal(t, int32(1), requestCount.Load())
 	require.Equal(t, "户山香澄", app.charaNames["1"])
+}
+
+func TestLoadCostumeNamesRetriesAfterFailure(t *testing.T) {
+	config.Init()
+	cfg := config.Get()
+	cfg.UseCharaCache = false
+	cfg.CharaRosterURL = "https://test.invalid/api/characters"
+	cfg.ServerTags = []string{"jp"}
+	cfg.AssetServers = map[string]config.AssetServerConfig{
+		"jp": {
+			AssetsIndexURL: "https://test.invalid/api/assets",
+		},
+	}
+
+	var requests atomic.Int32
+	previousTransport := http.DefaultTransport
+	//nolint:reassign // 使用可控传输模拟首次请求失败和后续重试
+	http.DefaultTransport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if requests.Add(1) == 1 {
+			return &http.Response{
+				StatusCode: http.StatusServiceUnavailable,
+				Body:       io.NopCloser(strings.NewReader("{}")),
+				Request:    req,
+			}, nil
+		}
+
+		body := "{}"
+		if strings.HasSuffix(req.URL.Path, "/assets") {
+			body = `{"live2d":{"chara":{}}}`
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(body)),
+			Header:     make(http.Header),
+			Request:    req,
+		}, nil
+	})
+	t.Cleanup(func() {
+		//nolint:reassign // 恢复测试前的默认传输
+		http.DefaultTransport = previousTransport
+	})
+
+	app := &App{ctx: context.Background(), apiClient: api.NewClient()}
+	app.loadCostumeNames()
+	require.Nil(t, app.costumeNames)
+
+	app.loadCostumeNames()
+	require.NotNil(t, app.costumeNames)
+	require.NotNil(t, app.costumeNameInfo)
+	require.Greater(t, requests.Load(), int32(1))
 }
 
 func TestFilterValidCostumesReturnsAvailabilityError(t *testing.T) {

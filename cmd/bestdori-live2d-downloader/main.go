@@ -29,17 +29,17 @@ const (
 
 // App 表示应用程序的主要结构.
 type App struct {
-	ctx              context.Context
-	cancel           context.CancelFunc
-	apiClient        *api.Client
-	dl               *downloader.Downloader
-	tuiModel         *tui.Model
-	program          *tea.Program
-	charaNames       map[string]string               // 角色ID -> 中文名
-	costumeNames     map[string]string               // 服装资源包名 -> 中文描述
-	costumeNameInfo  map[string]*api.CostumeNameInfo // 服装资源包名 -> 多语言名称信息
-	charaNamesOnce   sync.Once
-	costumeNamesOnce sync.Once
+	ctx             context.Context
+	cancel          context.CancelFunc
+	apiClient       *api.Client
+	dl              *downloader.Downloader
+	tuiModel        *tui.Model
+	program         *tea.Program
+	charaNames      map[string]string               // 角色ID -> 中文名
+	costumeNames    map[string]string               // 服装资源包名 -> 中文描述
+	costumeNameInfo map[string]*api.CostumeNameInfo // 服装资源包名 -> 多语言名称信息
+	charaNamesOnce  sync.Once
+	costumeNamesMu  sync.Mutex
 }
 
 // NewApp 创建新的应用程序实例.
@@ -100,23 +100,22 @@ func (a *App) localizedCharacterName(charaID int) string {
 
 // loadCostumeNames 加载服装名称映射.
 func (a *App) loadCostumeNames() {
-	a.costumeNamesOnce.Do(func() {
-		if a.costumeNames != nil && a.costumeNameInfo != nil {
-			return
-		}
+	a.costumeNamesMu.Lock()
+	defer a.costumeNamesMu.Unlock()
 
-		names, nameInfo, err := a.apiClient.GetCostumeNames(a.ctx)
-		if err != nil {
-			log.DefaultLogger.Warn().Err(err).Msg("加载服装名称失败，将使用原始名称")
-			a.costumeNames = make(map[string]string)
-			a.costumeNameInfo = make(map[string]*api.CostumeNameInfo)
-			return
-		}
+	if a.costumeNames != nil && a.costumeNameInfo != nil {
+		return
+	}
 
-		a.costumeNames = names
-		a.costumeNameInfo = nameInfo
-		log.DefaultLogger.Info().Int("count", len(names)).Msg("加载服装名称成功")
-	})
+	names, nameInfo, err := a.apiClient.GetCostumeNames(a.ctx)
+	if err != nil {
+		log.DefaultLogger.Warn().Err(err).Msg("加载服装名称失败，将使用原始名称")
+		return
+	}
+
+	a.costumeNames = names
+	a.costumeNameInfo = nameInfo
+	log.DefaultLogger.Info().Int("count", len(names)).Msg("加载服装名称成功")
 }
 
 // lookupCostumeName 查找服装中文名称，优先使用 live2dName，其次使用 costume.
