@@ -465,7 +465,7 @@ func (b *Live2dBuilder) prepareDownloadTasks() ([]downloadTask, []string) {
 
 	// 模型文件
 	modelFile := filepath.Join(b.dataPath, "model.moc")
-	if _, err := os.Stat(modelFile); os.IsNotExist(err) {
+	if !isRegularFile(modelFile) {
 		tasks = append(tasks, downloadTask{
 			bundleFile:    b.data.Model,
 			filePath:      modelFile,
@@ -478,7 +478,7 @@ func (b *Live2dBuilder) prepareDownloadTasks() ([]downloadTask, []string) {
 
 	// 物理文件
 	physicsFile := filepath.Join(b.dataPath, physicsFileName)
-	if _, err := os.Stat(physicsFile); os.IsNotExist(err) {
+	if !isRegularFile(physicsFile) {
 		tasks = append(tasks, downloadTask{
 			bundleFile:    b.data.Physics,
 			filePath:      physicsFile,
@@ -493,7 +493,7 @@ func (b *Live2dBuilder) prepareDownloadTasks() ([]downloadTask, []string) {
 	texturePath := filepath.Join(b.dataPath, "textures")
 	for _, texture := range b.data.Textures {
 		file := filepath.Join(texturePath, texture.FileName)
-		if _, err := os.Stat(file); os.IsNotExist(err) {
+		if !isRegularFile(file) {
 			tasks = append(tasks, downloadTask{
 				bundleFile:    texture,
 				filePath:      file,
@@ -509,7 +509,7 @@ func (b *Live2dBuilder) prepareDownloadTasks() ([]downloadTask, []string) {
 	motionPath := filepath.Join(b.dataPath, "motions")
 	for _, motion := range b.data.Motions {
 		file := filepath.Join(motionPath, motion.FileName)
-		if _, err := os.Stat(file); os.IsNotExist(err) {
+		if !isRegularFile(file) {
 			tasks = append(tasks, downloadTask{
 				bundleFile:    motion,
 				filePath:      file,
@@ -525,7 +525,7 @@ func (b *Live2dBuilder) prepareDownloadTasks() ([]downloadTask, []string) {
 	expressionPath := filepath.Join(b.dataPath, "expressions")
 	for _, expression := range b.data.Expressions {
 		file := filepath.Join(expressionPath, expression.FileName)
-		if _, err := os.Stat(file); os.IsNotExist(err) {
+		if !isRegularFile(file) {
 			tasks = append(tasks, downloadTask{
 				bundleFile:    expression,
 				filePath:      file,
