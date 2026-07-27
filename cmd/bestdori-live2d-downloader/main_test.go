@@ -119,3 +119,29 @@ func TestFilterValidCostumesReturnsAvailabilityError(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 	require.Empty(t, costumes)
 }
+
+func TestFilterValidCostumesKeepsAvailableResultsWhenOneCheckFails(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/live2d/chara/001_error_rip/buildData.asset" {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+
+	config.Init()
+	config.Get().AssetServers = map[string]config.AssetServerConfig{
+		"jp": {BaseAssetsURL: server.URL},
+	}
+	app := &App{ctx: context.Background(), apiClient: api.NewClient()}
+
+	costumes, err := app.filterValidCostumes([]model.Live2dAsset{
+		{Server: "jp", Costume: "001_casual"},
+		{Server: "jp", Costume: "001_error"},
+	})
+
+	require.Error(t, err)
+	require.Equal(t, []model.Live2dAsset{{Server: "jp", Costume: "001_casual"}}, costumes)
+}

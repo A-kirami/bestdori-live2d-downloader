@@ -385,10 +385,13 @@ func (a *App) updateCharaCostumes(id int, firstName string, displayName string) 
 
 	// 过滤出可下载的服装（验证 buildData.asset 是否存在）
 	validCostumes, err := a.filterValidCostumes(costumes)
-	if err != nil {
+	if err != nil && len(validCostumes) == 0 {
 		log.DefaultLogger.Error().Int("charaID", id).Err(err).Msg("检查角色服装资源失败")
 		a.program.Send(tui.ShowCharaListErrorMsg{Message: fmt.Sprintf("检查角色服装资源失败: %v", err)})
 		return
+	}
+	if err != nil {
+		log.DefaultLogger.Warn().Int("charaID", id).Err(err).Msg("部分角色服装资源检查失败，将保留可用模型")
 	}
 
 	if len(validCostumes) == 0 {
@@ -474,16 +477,18 @@ func (a *App) filterValidCostumes(costumes []model.Live2dAsset) ([]model.Live2dA
 
 	// 按原始顺序返回有效的服装
 	var validCostumes []model.Live2dAsset
+	var checkErrors []error
 	for i, r := range results {
 		if r.err != nil {
-			return nil, fmt.Errorf("检查模型 %s 可用性失败: %w", costumes[i].Costume, r.err)
+			checkErrors = append(checkErrors, fmt.Errorf("检查模型 %s 可用性失败: %w", costumes[i].Costume, r.err))
+			continue
 		}
 		if r.valid {
 			validCostumes = append(validCostumes, costumes[i])
 		}
 	}
 
-	return validCostumes, nil
+	return validCostumes, errors.Join(checkErrors...)
 }
 
 // getCharaNames 获取角色名称，如果获取失败则使用默认名称.
