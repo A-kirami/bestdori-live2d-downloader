@@ -83,6 +83,25 @@ func TestFilteringPreservesSelections(t *testing.T) {
 	require.Len(t, selected, 2)
 }
 
+func TestSelectAllTogglesEveryItem(t *testing.T) {
+	t.Parallel()
+
+	m := tui.NewModel()
+	m.Update(tui.UpdateListMsg{
+		Items: []*model.Live2dAsset{
+			{Server: "jp", Costume: "001_casual"},
+			{Server: "jp", Costume: "001_school"},
+		},
+	})
+
+	m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	require.Len(t, m.GetSelectedItems(), 2)
+
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	require.Empty(t, m.GetSelectedItems())
+}
+
 func TestNamingModeChangesSelectedItemDisplayName(t *testing.T) {
 	t.Parallel()
 
