@@ -737,15 +737,26 @@ func (c *Client) GetLive2dAssets(ctx context.Context) (map[string]string, error)
 	return c.getLive2dAssets(ctx)
 }
 
-// GetAssetServer 获取指定服务器的配置.
-func (c *Client) GetAssetServer(tag string) (config.AssetServerConfig, bool) {
-	s, ok := c.assetServers[tag]
-	return s, ok
-}
+// IsLive2dAssetAvailable 检查 Live2D 构建数据是否可下载.
+func (c *Client) IsLive2dAssetAvailable(ctx context.Context, asset model.Live2dAsset) bool {
+	server, ok := c.assetServers[asset.Server]
+	if !ok {
+		return false
+	}
 
-// HTTPClient 获取 HTTP 客户端.
-func (c *Client) HTTPClient() *http.Client {
-	return c.httpClient
+	url := fmt.Sprintf("%s/live2d/chara/%s_rip/buildData.asset", server.BaseAssetsURL, asset.Costume)
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, url, nil)
+	if err != nil {
+		return false
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+
+	return resp.StatusCode == http.StatusOK && !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/html")
 }
 
 func isCharaCostume(costume string, charaID int) bool {

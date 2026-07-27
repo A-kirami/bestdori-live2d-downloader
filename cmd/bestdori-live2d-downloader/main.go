@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -478,16 +477,7 @@ func (a *App) filterValidCostumes(costumes []model.Live2dAsset) []model.Live2dAs
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			// 获取服务器配置
-			s, ok := a.apiClient.GetAssetServer(c.Server)
-			if !ok {
-				resultChan <- result{index: idx, valid: false}
-				return
-			}
-
-			// 检查 buildData.asset 是否存在
-			url := fmt.Sprintf("%s/live2d/chara/%s_rip/buildData.asset", s.BaseAssetsURL, c.Costume)
-			valid := a.checkURLValid(url)
+			valid := a.apiClient.IsLive2dAssetAvailable(a.ctx, c)
 			resultChan <- result{index: idx, valid: valid}
 		}(i, costume)
 	}
@@ -508,29 +498,6 @@ func (a *App) filterValidCostumes(costumes []model.Live2dAsset) []model.Live2dAs
 	}
 
 	return validCostumes
-}
-
-// checkURLValid 检查 URL 是否返回有效 JSON（非 HTML）.
-func (a *App) checkURLValid(url string) bool {
-	req, err := http.NewRequestWithContext(a.ctx, http.MethodHead, url, nil)
-	if err != nil {
-		return false
-	}
-
-	resp, err := a.apiClient.HTTPClient().Do(req)
-	if err != nil {
-		return false
-	}
-	defer resp.Body.Close()
-
-	// 检查状态码
-	if resp.StatusCode != http.StatusOK {
-		return false
-	}
-
-	// 检查 Content-Type
-	contentType := resp.Header.Get("Content-Type")
-	return !strings.HasPrefix(contentType, "text/html")
 }
 
 // getCharaNames 获取角色名称，如果获取失败则使用默认名称.

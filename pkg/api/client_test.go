@@ -13,6 +13,7 @@ import (
 	"github.com/A-kirami/bestdori-live2d-downloader/pkg/api"
 	"github.com/A-kirami/bestdori-live2d-downloader/pkg/config"
 	"github.com/A-kirami/bestdori-live2d-downloader/pkg/log"
+	"github.com/A-kirami/bestdori-live2d-downloader/pkg/model"
 	"github.com/stretchr/testify/require"
 )
 
@@ -368,4 +369,34 @@ func TestGetDefaultAssetServerHonorsConfigDefault(t *testing.T) {
 	client := api.NewClient()
 
 	require.Equal(t, "cn", client.GetDefaultAssetServer())
+}
+
+func TestIsLive2dAssetAvailable(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodHead {
+			t.Errorf("request method = %s, want %s", r.Method, http.MethodHead)
+		}
+		if r.URL.Path != "/live2d/chara/001_casual_rip/buildData.asset" {
+			t.Errorf("request path = %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+
+	config.Init()
+	cfg := config.Get()
+	cfg.AssetServers = map[string]config.AssetServerConfig{
+		"jp": {BaseAssetsURL: server.URL},
+	}
+	client := api.NewClient()
+
+	require.True(t, client.IsLive2dAssetAvailable(context.Background(), model.Live2dAsset{
+		Server:  "jp",
+		Costume: "001_casual",
+	}))
+	require.False(t, client.IsLive2dAssetAvailable(context.Background(), model.Live2dAsset{
+		Server:  "unknown",
+		Costume: "001_casual",
+	}))
 }
