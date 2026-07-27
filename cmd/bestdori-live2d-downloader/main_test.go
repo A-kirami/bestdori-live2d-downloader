@@ -37,12 +37,10 @@ func TestHasCompleteModelFindsOtherNamingModeWithoutMovingIt(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(chinesePath, "model.json"), []byte("{}"), 0600))
 
 	app := &App{
-		ctx:          context.Background(),
-		charaNames:   map[string]string{"1": "户山香澄"},
-		costumeNames: map[string]string{"001_casual": "常服"},
-		costumeNameInfo: map[string]*api.CostumeNameInfo{
-			"001_casual": {Chinese: "常服"},
-		},
+		ctx:                  context.Background(),
+		charaNames:           map[string]string{"1": "户山香澄"},
+		costumeNames:         map[string]string{"001_casual": "常服"},
+		costumeJapaneseNames: map[string]string{},
 	}
 	originalPath := filepath.Join(savePath, "Kasumi Toyama", "001_casual")
 
@@ -154,7 +152,7 @@ func TestLoadCostumeNamesRetriesAfterFailure(t *testing.T) {
 
 	app.loadCostumeNames()
 	require.NotNil(t, app.costumeNames)
-	require.NotNil(t, app.costumeNameInfo)
+	require.NotNil(t, app.costumeJapaneseNames)
 	require.Greater(t, requests.Load(), int32(1))
 }
 

@@ -282,14 +282,6 @@ func (c *Client) GetCharacterInfoList(ctx context.Context) ([]CharacterInfo, err
 	return result, nil
 }
 
-// CostumeNameInfo 表示服装的多语言名称信息.
-type CostumeNameInfo struct {
-	Original string // 原始名称（assetBundleName）
-	Chinese  string // 中文名称（简体/繁体）
-	Japanese string // 日文名称
-	English  string // 英文名称
-}
-
 func selectLocalizedName(names []any) string {
 	for _, index := range [...]int{3, 2, 0, 1} {
 		if index >= len(names) {
@@ -308,10 +300,9 @@ func selectLocalizedName(names []any) string {
 
 func parseCostumeNameData(
 	costumeData map[string]any,
-) (map[string]string, map[string]string, map[string]*CostumeNameInfo) {
+) (map[string]string, map[string]string) {
 	names := make(map[string]string)
 	japaneseNames := make(map[string]string)
-	nameInfo := make(map[string]*CostumeNameInfo)
 
 	for _, value := range costumeData {
 		costume, ok := value.(map[string]any)
@@ -324,48 +315,16 @@ func parseCostumeNameData(
 			continue
 		}
 
-		info := &CostumeNameInfo{Original: bundleName}
-		info.Japanese, _ = descriptions[0].(string)
-		info.Japanese = strings.TrimSpace(info.Japanese)
-		if len(descriptions) > 1 {
-			info.English, _ = descriptions[1].(string)
-			info.English = strings.TrimSpace(info.English)
+		if localizedName := selectLocalizedName(descriptions); localizedName != "" {
+			names[bundleName] = localizedName
 		}
-		info.Chinese = selectLocalizedName(descriptions)
-		nameInfo[bundleName] = info
-
-		if info.Chinese != "" {
-			names[bundleName] = info.Chinese
-		}
-		if info.Japanese != "" {
-			japaneseNames[bundleName] = info.Japanese
+		japaneseName, _ := descriptions[0].(string)
+		if japaneseName = strings.TrimSpace(japaneseName); japaneseName != "" {
+			japaneseNames[bundleName] = japaneseName
 		}
 	}
 
-	return names, japaneseNames, nameInfo
-}
-
-func completeCostumeNameInfo(
-	nameInfo map[string]*CostumeNameInfo,
-	live2dNames map[string]bool,
-	eventNames map[int]string,
-) {
-	for live2dName := range live2dNames {
-		if _, exists := nameInfo[live2dName]; exists {
-			continue
-		}
-		nameToProcess := strings.TrimPrefix(live2dName, "bili_")
-		parts := strings.SplitN(nameToProcess, "_", 2)
-		if len(parts) < 2 {
-			continue
-		}
-		if translated := naming.TranslateCostumeSuffix(parts[1], eventNames); translated != "" {
-			nameInfo[live2dName] = &CostumeNameInfo{
-				Original: live2dName,
-				Chinese:  translated,
-			}
-		}
-	}
+	return names, japaneseNames
 }
 
 // collectAllLive2dNames 收集所有 Live2D 名称
@@ -467,30 +426,27 @@ func (c *Client) collectEventNames(ctx context.Context) map[int]string {
 //
 // 返回:
 //   - map[string]string: Live2D服装名到展示名称的映射
-//   - map[string]*CostumeNameInfo: Live2D服装名到多语言信息的映射
+//   - map[string]string: Live2D服装名到日文名称的映射
 //   - error: 错误信息
 //
 //nolint:gocognit,gocyclo,cyclop,funlen // 复杂的多语言映射逻辑
 func (c *Client) GetCostumeNames(
 	ctx context.Context,
-) (map[string]string, map[string]*CostumeNameInfo, error) {
+) (map[string]string, map[string]string, error) {
 	costumeURL := "https://bestdori.com/api/costumes/all.5.json"
 	costumeData, err := c.FetchData(ctx, costumeURL, "costume_names_5.json")
 	if err != nil {
 		return nil, nil, fmt.Errorf("获取服装数据失败: %w", err)
 	}
 
-	names, japaneseNames, nameInfo := parseCostumeNameData(costumeData)
+	names, japaneseNames := parseCostumeNameData(costumeData)
 
 	live2dNames, err := c.collectAllLive2dNames(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// 为没有直接匹配的 Live2D 名补充通用服装映射
-
 	eventNames := c.collectEventNames(ctx)
-	completeCostumeNameInfo(nameInfo, live2dNames, eventNames)
 
 	// 预计算每个角色+活动的剧情编号数量
 	charaEventStoryNumbers := make(map[string]map[string]bool)
@@ -618,7 +574,7 @@ func (c *Client) GetCostumeNames(
 		}
 	}
 
-	return names, nameInfo, nil
+	return names, japaneseNames, nil
 }
 
 // GetChara 获取指定角色的详细信息

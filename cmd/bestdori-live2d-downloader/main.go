@@ -29,17 +29,17 @@ const (
 
 // App 表示应用程序的主要结构.
 type App struct {
-	ctx             context.Context
-	cancel          context.CancelFunc
-	apiClient       *api.Client
-	dl              *downloader.Downloader
-	tuiModel        *tui.Model
-	program         *tea.Program
-	charaNames      map[string]string               // 角色ID -> 中文名
-	costumeNames    map[string]string               // 服装资源包名 -> 中文描述
-	costumeNameInfo map[string]*api.CostumeNameInfo // 服装资源包名 -> 多语言名称信息
-	charaNamesOnce  sync.Once
-	costumeNamesMu  sync.Mutex
+	ctx                  context.Context
+	cancel               context.CancelFunc
+	apiClient            *api.Client
+	dl                   *downloader.Downloader
+	tuiModel             *tui.Model
+	program              *tea.Program
+	charaNames           map[string]string // 角色ID -> 中文名
+	costumeNames         map[string]string // 服装资源包名 -> 本地化描述
+	costumeJapaneseNames map[string]string // 服装资源包名 -> 日文描述
+	charaNamesOnce       sync.Once
+	costumeNamesMu       sync.Mutex
 }
 
 // NewApp 创建新的应用程序实例.
@@ -103,18 +103,18 @@ func (a *App) loadCostumeNames() {
 	a.costumeNamesMu.Lock()
 	defer a.costumeNamesMu.Unlock()
 
-	if a.costumeNames != nil && a.costumeNameInfo != nil {
+	if a.costumeNames != nil && a.costumeJapaneseNames != nil {
 		return
 	}
 
-	names, nameInfo, err := a.apiClient.GetCostumeNames(a.ctx)
+	names, japaneseNames, err := a.apiClient.GetCostumeNames(a.ctx)
 	if err != nil {
 		log.DefaultLogger.Warn().Err(err).Msg("加载服装名称失败，将使用原始名称")
 		return
 	}
 
 	a.costumeNames = names
-	a.costumeNameInfo = nameInfo
+	a.costumeJapaneseNames = japaneseNames
 	log.DefaultLogger.Info().Int("count", len(names)).Msg("加载服装名称成功")
 }
 
@@ -387,34 +387,19 @@ func (a *App) updateCharaCostumes(id int, firstName string, displayName string) 
 	// 加载服装名称信息
 	a.loadCostumeNames()
 
-	// 构建服装名称信息映射（用于搜索）
-	costumeNameInfoMap := make(map[string]*tui.CostumeNameInfo)
-	for _, asset := range costumeAssets {
-		if info, ok := a.costumeNameInfo[asset.Costume]; ok {
-			costumeNameInfoMap[asset.Costume] = &tui.CostumeNameInfo{
-				Original: info.Original,
-				Chinese:  info.Chinese,
-				Japanese: info.Japanese,
-			}
-		} else {
-			costumeNameInfoMap[asset.Costume] = &tui.CostumeNameInfo{
-				Original: asset.String(),
-			}
-		}
-	}
 	extraCharaName := ""
 	if displayName != firstName {
 		extraCharaName = displayName
 	}
 
-	// 发送列表更新（costumeNames 用于显示，costumeNameInfo 用于搜索）
+	// 发送列表更新
 	a.program.Send(tui.UpdateListMsg{
-		Items:           costumeAssets,
-		CostumeNames:    a.costumeNames,     // 显示用的中文名映射
-		CostumeNameInfo: costumeNameInfoMap, // 搜索用的多语言信息
-		CharaID:         id,
-		CharaName:       firstName,
-		ExtraCharaName:  extraCharaName,
+		Items:                costumeAssets,
+		CostumeNames:         a.costumeNames,
+		CostumeJapaneseNames: a.costumeJapaneseNames,
+		CharaID:              id,
+		CharaName:            firstName,
+		ExtraCharaName:       extraCharaName,
 	})
 }
 

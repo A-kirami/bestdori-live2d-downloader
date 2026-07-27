@@ -283,21 +283,14 @@ func (m *Model) Init() tea.Cmd {
 	return m.Spinner.Tick
 }
 
-// CostumeNameInfo 表示服装的多语言名称信息.
-type CostumeNameInfo struct {
-	Original string // 原始名称
-	Chinese  string // 中文名称（简体/繁体）
-	Japanese string // 日文名称
-}
-
 // UpdateListMsg 表示更新列表消息.
 type UpdateListMsg struct {
-	Items           []*model.Live2dAsset        // 列表项
-	CostumeNames    map[string]string           // 服装中文名映射（用于显示）
-	CostumeNameInfo map[string]*CostumeNameInfo // 服装多语言信息（用于搜索）
-	CharaID         int                         // 角色ID
-	CharaName       string                      // 角色显示名称
-	ExtraCharaName  string                      // 角色补充名称
+	Items                []*model.Live2dAsset // 列表项
+	CostumeNames         map[string]string    // 服装本地化名称（用于显示和搜索）
+	CostumeJapaneseNames map[string]string    // 服装日文名称（用于搜索）
+	CharaID              int                  // 角色ID
+	CharaName            string               // 角色显示名称
+	ExtraCharaName       string               // 角色补充名称
 }
 
 // UpdateDownloadListMsg 表示更新下载列表消息.
@@ -613,11 +606,8 @@ func (m *Model) handleUpdateListMsg(msg UpdateListMsg) (tea.Model, tea.Cmd) {
 				chineseTitle = fmt.Sprintf("%s (%s)", name, asset.Server)
 			}
 
-			// 使用 CostumeNameInfo 获取搜索用的多语言名称
-			if info, ok := msg.CostumeNameInfo[asset.Costume]; ok {
-				if info.Japanese != "" {
-					japaneseTitle = fmt.Sprintf("%s (%s)", info.Japanese, asset.Server)
-				}
+			if name := msg.CostumeJapaneseNames[asset.Costume]; name != "" {
+				japaneseTitle = fmt.Sprintf("%s (%s)", name, asset.Server)
 			}
 		}
 		title := originalTitle

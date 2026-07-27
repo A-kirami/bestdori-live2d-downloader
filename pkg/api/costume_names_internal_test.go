@@ -117,11 +117,11 @@ func TestGetCostumeNamesLoadsEachSourceOnce(t *testing.T) {
 		}, nil
 	})}
 
-	names, nameInfo, err := client.GetCostumeNames(context.Background())
+	names, japaneseNames, err := client.GetCostumeNames(context.Background())
 
 	require.NoError(t, err)
 	require.Equal(t, "常服", names["001_casual"])
-	require.Equal(t, "カジュアル", nameInfo["001_casual"].Japanese)
+	require.Equal(t, "カジュアル", japaneseNames["001_casual"])
 	require.Len(t, requestCounts, len(responses))
 	for path := range responses {
 		require.Equal(t, 1, requestCounts[path], path)
