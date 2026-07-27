@@ -1,8 +1,12 @@
 package api
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/A-kirami/bestdori-live2d-downloader/pkg/config"
 	"github.com/stretchr/testify/require"
 )
 
@@ -44,4 +48,31 @@ func TestSelectLocalizedName(t *testing.T) {
 			require.Equal(t, tt.want, selectLocalizedName(tt.descriptions))
 		})
 	}
+}
+
+func TestCollectAllLive2dNamesReturnsAssetIndexError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/characters/all.5.json" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte("{}"))
+			return
+		}
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(server.Close)
+
+	config.Init()
+	t.Cleanup(config.Init)
+	cfg := config.Get()
+	cfg.UseCharaCache = false
+	cfg.CharaRosterURL = server.URL + "/characters"
+	cfg.ServerTags = []string{"jp"}
+	cfg.AssetServers = map[string]config.AssetServerConfig{
+		"jp": {AssetsIndexURL: server.URL + "/assets.json"},
+	}
+
+	client := NewClient()
+	_, err := client.collectAllLive2dNames(context.Background())
+
+	require.ErrorContains(t, err, "获取资源索引失败")
 }

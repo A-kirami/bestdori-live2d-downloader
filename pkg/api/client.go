@@ -358,7 +358,10 @@ func (c *Client) collectAllLive2dNames(ctx context.Context) (map[string]bool, er
 	}
 
 	// 也从资源索引获取所有 Live2D 服装名
-	live2dAssets, _ := c.getLive2dAssets(ctx)
+	live2dAssets, err := c.getLive2dAssets(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("获取资源索引失败: %w", err)
+	}
 	for name := range live2dAssets {
 		live2dNames[name] = true
 	}
