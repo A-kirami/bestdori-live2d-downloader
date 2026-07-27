@@ -397,7 +397,6 @@ func (a *App) updateCharaCostumes(id int, firstName string, displayName string) 
 		Items:                costumeAssets,
 		CostumeNames:         a.costumeNames,
 		CostumeJapaneseNames: a.costumeJapaneseNames,
-		CharaID:              id,
 		CharaName:            firstName,
 		ExtraCharaName:       extraCharaName,
 	})

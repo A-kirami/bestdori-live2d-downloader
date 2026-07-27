@@ -14,8 +14,6 @@ import (
 	"github.com/A-kirami/bestdori-live2d-downloader/pkg/model"
 	"github.com/A-kirami/bestdori-live2d-downloader/pkg/version"
 
-	"slices"
-
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/progress"
@@ -162,12 +160,10 @@ type Model struct {
 	CharaList        list.Model               // 角色列表组件
 	Live2dList       list.Model               // Live2D 列表组件
 	DownloadList     list.Model               // 下载列表组件
-	SelectedIDs      []int                    // 选中的项目 ID 列表
 	State            string                   // 当前状态
 	SelectChan       chan []*SelectedItem     // 选择通道，用于处理选择请求
 	CharaSelectChan  chan int                 // 角色选择通道
 	Spinner          spinner.Model            // 加载动画组件
-	CurrentCharaID   int                      // 当前角色ID
 	CurrentCharaName string                   // 当前角色名称
 	ExtraCharaName   string                   // 额外角色名称
 	program          *tea.Program             // TUI 程序实例
@@ -288,7 +284,6 @@ type UpdateListMsg struct {
 	Items                []*model.Live2dAsset // 列表项
 	CostumeNames         map[string]string    // 服装本地化名称（用于显示和搜索）
 	CostumeJapaneseNames map[string]string    // 服装日文名称（用于搜索）
-	CharaID              int                  // 角色ID
 	CharaName            string               // 角色显示名称
 	ExtraCharaName       string               // 角色补充名称
 }
@@ -416,16 +411,6 @@ func (m *Model) toggleItemSelection(i listItem) {
 			}
 		}
 	}
-	if i.selected {
-		m.SelectedIDs = append(m.SelectedIDs, m.Live2dList.Index())
-	} else {
-		for j, id := range m.SelectedIDs {
-			if id == m.Live2dList.Index() {
-				m.SelectedIDs = slices.Delete(m.SelectedIDs, j, j+1)
-				break
-			}
-		}
-	}
 	m.Live2dList.SetItem(m.Live2dList.Index(), i)
 }
 
@@ -493,14 +478,6 @@ func (m *Model) handleSelectAll() {
 		it.selected = !allSelected
 		m.Live2dList.SetItem(i, it)
 	}
-	if !allSelected {
-		m.SelectedIDs = make([]int, len(m.Live2dList.Items()))
-		for i := range m.Live2dList.Items() {
-			m.SelectedIDs[i] = i
-		}
-	} else {
-		m.SelectedIDs = nil
-	}
 }
 
 // handleListEnter 处理列表状态下的回车键.
@@ -546,11 +523,6 @@ func (m *Model) getDisplayName(asset *model.Live2dAsset) string {
 	return asset.String()
 }
 
-// GetDisplayName 获取服装的显示名称（公开方法）.
-func (m *Model) GetDisplayName(asset *model.Live2dAsset) string {
-	return m.getDisplayName(asset)
-}
-
 // handleDownloadingState 处理下载状态下的消息.
 func (m *Model) handleDownloadingState(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
@@ -587,7 +559,6 @@ func (m *Model) handleUpdateListMsg(msg UpdateListMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	m.CurrentCharaID = msg.CharaID
 	m.CurrentCharaName = msg.CharaName
 	m.ExtraCharaName = msg.ExtraCharaName
 	m.ClearError()
@@ -634,7 +605,6 @@ func (m *Model) handleUpdateListMsg(msg UpdateListMsg) (tea.Model, tea.Cmd) {
 	}
 	m.Live2dList.SetItems(listItems)
 	m.AllCostumeItems = listItems // 保存完整列表用于过滤
-	m.SelectedIDs = nil
 	m.IsFiltering = false
 	m.FilterInput.Reset()
 	m.State = StateList
@@ -1036,7 +1006,6 @@ func (m *Model) SetLive2DList(items []*model.Live2dAsset) {
 		}
 	}
 	m.Live2dList.SetItems(listItems)
-	m.SelectedIDs = nil
 	// 设置列表状态
 	m.State = StateList
 }
