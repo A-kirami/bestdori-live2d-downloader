@@ -126,7 +126,7 @@ func (c *Client) FetchData(ctx context.Context, url string, cache string) (map[s
 	contentType := resp.Header.Get("Content-Type")
 	if strings.HasPrefix(contentType, "text/html") {
 		log.DefaultLogger.Error().Str("url", url).Str("contentType", contentType).Msg("返回了HTML而非JSON")
-		return nil, fmt.Errorf("资源不存在或无法访问: %s", url)
+		return nil, fmt.Errorf("来自 Bestdori 的响应不是有效数据: %s", url)
 	}
 
 	var result map[string]any
@@ -651,38 +651,6 @@ func (c *Client) getLive2dAssets(ctx context.Context) (map[string]string, error)
 // GetLive2dAssets 获取 Live2D 资源映射（公开方法）.
 func (c *Client) GetLive2dAssets(ctx context.Context) (map[string]string, error) {
 	return c.getLive2dAssets(ctx)
-}
-
-// IsLive2dAssetAvailable 检查 Live2D 构建数据是否可下载.
-func (c *Client) IsLive2dAssetAvailable(ctx context.Context, asset model.Live2dAsset) (bool, error) {
-	server, ok := c.assetServers[asset.Server]
-	if !ok {
-		return false, fmt.Errorf("不存在的服务器来源: %s", asset.Server)
-	}
-
-	url := fmt.Sprintf("%s/live2d/chara/%s_rip/buildData.asset", server.BaseAssetsURL, asset.Costume)
-	req, err := http.NewRequestWithContext(ctx, http.MethodHead, url, nil)
-	if err != nil {
-		return false, fmt.Errorf("创建资源检查请求失败: %w", err)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return false, fmt.Errorf("检查 Live2D 资源失败: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotFound {
-		return false, nil
-	}
-	if resp.StatusCode != http.StatusOK {
-		return false, fmt.Errorf("检查 Live2D 资源失败: HTTP %d", resp.StatusCode)
-	}
-	if strings.HasPrefix(resp.Header.Get("Content-Type"), "text/html") {
-		return false, errors.New("检查 Live2D 资源失败: 服务器返回 HTML")
-	}
-
-	return true, nil
 }
 
 func isCharaCostume(costume string, charaID int) bool {

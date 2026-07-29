@@ -362,23 +362,8 @@ func (a *App) updateCharaCostumes(request tui.CharaLoadRequest, firstName string
 		return
 	}
 
-	// 排除明确不存在的资源；检查失败的条目仍保留在列表中
-	visibleCostumes, err := a.excludeMissingCostumes(costumes)
-	if err != nil {
-		log.DefaultLogger.Warn().Int("charaID", id).Err(err).Msg("部分角色服装资源检查失败，将保留未确认模型")
-	}
-
-	if len(visibleCostumes) == 0 {
-		log.DefaultLogger.Warn().Int("charaID", id).Msg("该角色没有可下载的 Live2D 模型")
-		a.program.Send(tui.ShowCharaListErrorMsg{
-			Message:   "该角色没有可下载的 Live2D 模型",
-			RequestID: request.RequestID,
-		})
-		return
-	}
-
 	var costumeAssets []*model.Live2dAsset
-	for _, live2d := range visibleCostumes {
+	for _, live2d := range costumes {
 		// create a copy to take address
 		aCopy := live2d
 		costumeAssets = append(costumeAssets, &aCopy)
@@ -386,8 +371,7 @@ func (a *App) updateCharaCostumes(request tui.CharaLoadRequest, firstName string
 
 	log.DefaultLogger.Info().
 		Str("charaName", firstName).
-		Int("costumesCount", len(visibleCostumes)).
-		Int("filteredCount", len(costumes)-len(visibleCostumes)).
+		Int("costumesCount", len(costumes)).
 		Msg("找到角色服装列表")
 
 	// 加载服装名称信息
@@ -407,58 +391,6 @@ func (a *App) updateCharaCostumes(request tui.CharaLoadRequest, firstName string
 		ExtraCharaName:       extraCharaName,
 		RequestID:            request.RequestID,
 	})
-}
-
-// excludeMissingCostumes 排除已确认不存在的服装；检查失败的条目仍保留.
-func (a *App) excludeMissingCostumes(costumes []model.Live2dAsset) ([]model.Live2dAsset, error) {
-	type result struct {
-		index int
-		valid bool
-		err   error
-	}
-
-	resultChan := make(chan result, len(costumes))
-	sem := make(chan struct{}, 10) // 并发限制
-
-	for i, costume := range costumes {
-		go func(idx int, c model.Live2dAsset) {
-			sem <- struct{}{}
-			defer func() { <-sem }()
-
-			valid, err := a.apiClient.IsLive2dAssetAvailable(a.ctx, c)
-			resultChan <- result{index: idx, valid: valid, err: err}
-		}(i, costume)
-	}
-
-	// 收集结果（按原始顺序）
-	results := make([]result, len(costumes))
-	for range costumes {
-		r := <-resultChan
-		results[r.index] = r
-	}
-
-	// 按原始顺序返回未确认缺失的服装
-	var visibleCostumes []model.Live2dAsset
-	var firstCheckError error
-	failedChecks := 0
-	for i, r := range results {
-		if r.err != nil {
-			visibleCostumes = append(visibleCostumes, costumes[i])
-			failedChecks++
-			if firstCheckError == nil {
-				firstCheckError = fmt.Errorf("检查模型 %s 可用性失败: %w", costumes[i].Costume, r.err)
-			}
-			continue
-		}
-		if r.valid {
-			visibleCostumes = append(visibleCostumes, costumes[i])
-		}
-	}
-
-	if failedChecks > 1 {
-		return visibleCostumes, fmt.Errorf("%d 个模型资源检查失败，首个错误: %w", failedChecks, firstCheckError)
-	}
-	return visibleCostumes, firstCheckError
 }
 
 // getCharaNames 获取角色名称，如果获取失败则使用默认名称.
