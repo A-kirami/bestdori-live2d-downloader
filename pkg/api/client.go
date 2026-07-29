@@ -126,7 +126,7 @@ func (c *Client) FetchData(ctx context.Context, url string, cache string) (map[s
 	contentType := resp.Header.Get("Content-Type")
 	if strings.HasPrefix(contentType, "text/html") {
 		log.DefaultLogger.Error().Str("url", url).Str("contentType", contentType).Msg("返回了HTML而非JSON")
-		return nil, fmt.Errorf("来自 Bestdori 的响应不是有效数据: %s", url)
+		return nil, fmt.Errorf("来自 Bestdori 的响应不是有效数据（返回了网页内容）: %s", url)
 	}
 
 	var result map[string]any
