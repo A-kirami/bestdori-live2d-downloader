@@ -157,7 +157,9 @@ func TestCostumeListShowsSelectionCount(t *testing.T) {
 		CharaName: "香澄",
 	})
 
-	require.Contains(t, m.View(), "香澄 | 已选 0 / 3 | 命名: 映射后")
+	require.Contains(t, m.View(), "香澄 | 已选 0 / 3")
+	require.NotContains(t, m.View(), "命名: 映射后")
+	require.Contains(t, m.View(), "N 命名：中文")
 	m.Update(tea.KeyMsg{Type: tea.KeySpace})
 	require.Contains(t, m.View(), "已选 1 / 3")
 
@@ -178,8 +180,10 @@ func TestNamingModeChangesSelectedItemDisplayName(t *testing.T) {
 		Items:        []*model.Live2dAsset{{Server: "jp", Costume: "001_casual"}},
 		CostumeNames: map[string]string{"001_casual": "常服"},
 	})
+	require.Contains(t, m.View(), "N 命名：中文")
 	m.Update(tea.KeyMsg{Type: tea.KeySpace})
 	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	require.Contains(t, m.View(), "N 命名：原始")
 	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
 	selected := <-m.GetSelectChan()

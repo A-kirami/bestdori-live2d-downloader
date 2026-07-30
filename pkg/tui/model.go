@@ -982,11 +982,7 @@ func (m *Model) View() string {
 		s.WriteString(helpStyle("按 Esc 或 Ctrl+C 退出"))
 
 	case StateList:
-		// 自定义标题（包含命名模式）
-		namingModeStr := "映射后"
-		if m.NamingMode == config.NamingModeOriginal {
-			namingModeStr = "原始"
-		}
+		// 自定义标题
 		selectedCount, costumeCount := m.costumeSelectionStats()
 		characterName := m.CurrentCharaName
 		if m.ExtraCharaName != "" {
@@ -996,7 +992,7 @@ func (m *Model) View() string {
 		if m.CurrentCharaName != "" {
 			title += " - " + characterName
 		}
-		title = fmt.Sprintf("%s | 已选 %d / %d | 命名: %s", title, selectedCount, costumeCount, namingModeStr)
+		title = fmt.Sprintf("%s | 已选 %d / %d", title, selectedCount, costumeCount)
 		s.WriteString(titleStyle.Render(title))
 		s.WriteString("\n\n")
 		// 搜索框
@@ -1022,7 +1018,11 @@ func (m *Model) View() string {
 		if m.IsFiltering {
 			s.WriteString(helpStyle("输入过滤，Esc 退出搜索"))
 		} else {
-			s.WriteString(helpStyle("空格选择，A 全选，N 切换命名，/ 搜索，Enter 下载，Esc 返回"))
+			namingModeStr := "中文"
+			if m.NamingMode == config.NamingModeOriginal {
+				namingModeStr = "原始"
+			}
+			s.WriteString(helpStyle(fmt.Sprintf("空格选择，A 全选，N 命名：%s，/ 搜索，Enter 下载，Esc 返回", namingModeStr)))
 		}
 
 	case StateDownloading:
