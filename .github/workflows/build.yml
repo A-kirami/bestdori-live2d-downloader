@@ -25,7 +25,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -37,7 +37,7 @@ jobs:
           echo "value=${tag#v}" >> "$GITHUB_OUTPUT"
 
       - name: Setup go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
@@ -49,7 +49,7 @@ jobs:
         run: go build -ldflags "-X github.com/A-kirami/bestdori-live2d-downloader/pkg/version.Version=${{ steps.version.outputs.value }} -X github.com/A-kirami/bestdori-live2d-downloader/pkg/version.Commit=${{ env.GITHUB_BUILD_SHA }}" -o bestdori-live2d-downloader${{ matrix.os == 'windows-latest' && '.exe' || '' }} ./cmd/bestdori-live2d-downloader
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bestdori-live2d-downloader-${{ matrix.os }}
           path: bestdori-live2d-downloader${{ matrix.os == 'windows-latest' && '.exe' || '' }}

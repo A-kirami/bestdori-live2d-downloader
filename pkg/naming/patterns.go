@@ -41,7 +41,7 @@ func translateDatedCostume(suffix string, eventNames map[int]string) string {
 		switch costumeType {
 		case "live":
 			typeName = "Live"
-		case "pajamas":
+		case pajamasKey:
 			typeName = costumePajamas
 		default:
 			typeName = costumeType
@@ -157,7 +157,7 @@ func translateBaseCostume(suffix string) string {
 	baseCostumes := map[string]string{
 		"casual":      "常服",
 		"school":      "校服",
-		"pajamas":     costumePajamas,
+		pajamasKey:    costumePajamas,
 		"swimsuit":    "泳装",
 		"yukata":      "浴衣",
 		"halloween":   costumeHalloween,

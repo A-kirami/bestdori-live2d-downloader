@@ -9,6 +9,7 @@ import (
 )
 
 const (
+	pajamasKey       = "pajamas"
 	costumePajamas   = "睡衣"
 	costumeHalloween = "万圣节"
 	costumePractice  = "剧情初始服装"
@@ -101,7 +102,7 @@ func TranslateCostumeSuffix(suffix string, eventNames map[int]string) string {
 		"general":                   "通用",
 		"gym_clothes":               "体操服",
 		"tracksuit":                 "运动服",
-		"pajamas":                   costumePajamas,
+		pajamasKey:                  costumePajamas,
 		"swimsuit":                  "泳装",
 		"swim_swit":                 "泳装",
 		"apron":                     "围裙",
