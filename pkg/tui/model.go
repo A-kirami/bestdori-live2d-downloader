@@ -10,10 +10,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/A-kirami/bestdori-live2d-downloader/pkg/config"
 	"github.com/A-kirami/bestdori-live2d-downloader/pkg/model"
 	"github.com/A-kirami/bestdori-live2d-downloader/pkg/version"
-
-	"slices"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
@@ -30,6 +29,8 @@ var (
 	helpStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#626262")).Render // 帮助文本样式
 	//nolint:gochecknoglobals // 使用全局样式常量是必要的，因为需要在不同的 UI 组件中保持一致的样式
 	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FF69B4")) // 标题样式
+	//nolint:gochecknoglobals // 使用全局样式常量是必要的，因为需要在不同的 UI 组件中保持一致的样式
+	errorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000")).Render // 错误信息样式
 )
 
 // 界面常量.
@@ -38,11 +39,14 @@ const (
 	maxWidth = 80 // 最大宽度
 
 	// 状态常量.
-	StateInput       = "input"       // 输入状态
+	StateCharaList   = "chara_list"  // 角色列表状态
 	StateList        = "list"        // 列表状态
 	StateLoading     = "loading"     // 加载状态
 	StateDownloading = "downloading" // 下载状态
 	KeyEsc           = "esc"         // ESC 键
+	KeyEnter         = "enter"       // Enter 键
+	KeyUp            = "up"          // 上箭头键
+	KeyDown          = "down"        // 下箭头键
 )
 
 // progressMsg 表示进度更新消息.
@@ -98,9 +102,13 @@ func (i DownloadListItem) FilterValue() string { return i.Name }
 
 // listItem 表示列表项.
 type listItem struct {
-	title    string             // 标题
-	selected bool               // 是否选中
-	asset    *model.Live2dAsset // 对应的 Live2dAsset（如果有）
+	title         string             // 当前显示标题
+	originalTitle string             // 原始标题
+	chineseTitle  string             // 中文标题（简体/繁体）
+	japaneseTitle string             // 日文标题
+	allNames      string             // 所有名称变体（用于搜索过滤）
+	selected      bool               // 是否选中
+	asset         *model.Live2dAsset // 对应的 Live2dAsset（如果有）
 }
 
 // Title 返回列表项的标题.
@@ -114,33 +122,62 @@ func (i listItem) Title() string {
 // Description 返回列表项的描述.
 func (i listItem) Description() string { return "" }
 
+// FilterValue 返回用于过滤的值（包含所有名称变体）.
+func (i listItem) FilterValue() string { return i.allNames }
+
+// charaListItem 表示角色列表项.
+type charaListItem struct {
+	id    int    // 角色ID
+	name  string // 角色名称
+	color string // 角色颜色代码
+}
+
+// Title 返回角色列表项的标题（带颜色）.
+func (i charaListItem) Title() string {
+	// 特殊角色：米歇尔/奥泽美咲 (ID 015)
+	if i.id == 15 {
+		michelleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(i.color))
+		misakiStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#DD33CC"))
+		return michelleStyle.Render("#015 米歇尔") + "/" + misakiStyle.Render("奥泽美咲")
+	}
+	style := lipgloss.NewStyle().Foreground(lipgloss.Color(i.color))
+	return style.Render(fmt.Sprintf("#%03d %s", i.id, i.name))
+}
+
+// Description 返回角色列表项的描述.
+func (i charaListItem) Description() string { return "" }
+
 // FilterValue 返回用于过滤的值.
-func (i listItem) FilterValue() string { return i.title }
+func (i charaListItem) FilterValue() string { return i.name }
 
 // Model 表示 TUI 模型
 // 包含所有 UI 组件和状态.
 type Model struct {
-	Items            map[string]*DownloadItem  // 下载项映射，key 为项目名称，value 为下载项
-	ItemOrder        []string                  // 下载项顺序列表
-	Width            int                       // 界面宽度
-	Quitting         bool                      // 是否正在退出程序
-	TextInput        textinput.Model           // 文本输入框组件
-	Live2dList       list.Model                // Live2D 列表组件
-	DownloadList     list.Model                // 下载列表组件
-	SelectedIDs      []int                     // 选中的项目 ID 列表
-	State            string                    // 当前状态
-	SearchChan       chan string               // 搜索通道，用于处理搜索请求
-	SelectChan       chan []*model.Live2dAsset // 选择通道，用于处理选择请求
-	Spinner          spinner.Model             // 加载动画组件
-	CurrentCharaName string                    // 当前角色名称
-	ExtraCharaName   string                    // 额外角色名称
-	program          *tea.Program              // TUI 程序实例
-	cancelChan       chan struct{}             // 取消通道，用于取消操作
-	Ctx              context.Context           // 上下文，用于控制操作的生命周期
-	Cancel           context.CancelFunc        // 取消函数，用于取消上下文
-	ErrorMessage     string                    // 错误消息
-	TotalModels      int                       // 总模型数量
-	CompletedModels  int                       // 已完成的模型数量
+	Items            map[string]*DownloadItem // 下载项映射，key 为项目名称，value 为下载项
+	ItemOrder        []string                 // 下载项顺序列表
+	Width            int                      // 界面宽度
+	Quitting         bool                     // 是否正在退出程序
+	CharaList        list.Model               // 角色列表组件
+	Live2dList       list.Model               // Live2D 列表组件
+	DownloadList     list.Model               // 下载列表组件
+	State            string                   // 当前状态
+	SelectChan       chan []*SelectedItem     // 选择通道，用于处理选择请求
+	CharaSelectChan  chan CharaLoadRequest    // 角色选择通道
+	Spinner          spinner.Model            // 加载动画组件
+	CurrentCharaName string                   // 当前角色名称
+	ExtraCharaName   string                   // 额外角色名称
+	charaRequestID   uint64                   // 当前角色加载请求 ID
+	program          *tea.Program             // TUI 程序实例
+	cancelChan       chan struct{}            // 取消通道，用于取消操作
+	Ctx              context.Context          // 上下文，用于控制操作的生命周期
+	Cancel           context.CancelFunc       // 取消函数，用于取消上下文
+	ErrorMessage     string                   // 错误消息
+	TotalModels      int                      // 总模型数量
+	CompletedModels  int                      // 已完成的模型数量
+	NamingMode       config.NamingMode        // 文件夹命名模式
+	IsFiltering      bool                     // 是否处于搜索过滤模式
+	FilterInput      textinput.Model          // 搜索输入框
+	AllCostumeItems  []list.Item              // 所有服装列表项（过滤前）
 }
 
 // DownloadDelegate 用于下载进度列表的代理
@@ -171,16 +208,19 @@ func (d DownloadDelegate) Render(w io.Writer, _ list.Model, _ int, item list.Ite
 func NewModel() Model {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	ti := textinput.New()
-	ti.Placeholder = "输入角色名称或 Live2D 模型名称"
-	ti.Focus()
-	ti.CharLimit = 156
-	ti.Width = 50
-
 	// 创建自定义的列表样式
 	delegate := list.NewDefaultDelegate()
 	delegate.ShowDescription = false
 
+	// 创建角色列表
+	charaDelegate := list.NewDefaultDelegate()
+	charaDelegate.ShowDescription = false
+	charaList := list.New([]list.Item{}, charaDelegate, 0, 0)
+	charaList.Title = "选择角色"
+	charaList.SetShowHelp(true)
+	charaList.DisableQuitKeybindings()
+
+	// 创建服装列表
 	l := list.New([]list.Item{}, delegate, 0, 0)
 	l.Title = "选择要下载的 Live2D 模型"
 	l.SetShowHelp(true)
@@ -209,32 +249,45 @@ func NewModel() Model {
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF69B4"))
 
+	// 创建搜索输入框
+	filterInput := textinput.New()
+	filterInput.Placeholder = "输入中文/日文/原始名搜索..."
+	filterInput.CharLimit = 100
+	filterInput.Width = 40
+
 	return Model{
 		Items:           make(map[string]*DownloadItem),
 		ItemOrder:       []string{},
-		TextInput:       ti,
+		FilterInput:     filterInput,
+		CharaList:       charaList,
 		Live2dList:      l,
 		DownloadList:    downloadList,
-		State:           StateInput,
-		SearchChan:      make(chan string, 1),
-		SelectChan:      make(chan []*model.Live2dAsset, 1),
+		State:           StateLoading,
+		SelectChan:      make(chan []*SelectedItem, 1),
+		CharaSelectChan: make(chan CharaLoadRequest, 1),
 		Spinner:         s,
 		cancelChan:      make(chan struct{}), // 初始化取消通道
 		Ctx:             ctx,
 		Cancel:          cancel,
 		TotalModels:     0,
 		CompletedModels: 0,
+		NamingMode:      config.Get().NamingMode,
 	}
 }
 
 // Init 初始化 TUI 模型.
 func (m *Model) Init() tea.Cmd {
-	return tea.Batch(textinput.Blink, m.Spinner.Tick)
+	return m.Spinner.Tick
 }
 
 // UpdateListMsg 表示更新列表消息.
 type UpdateListMsg struct {
-	Items []*model.Live2dAsset // 列表项
+	Items                []*model.Live2dAsset // 列表项
+	CostumeNames         map[string]string    // 服装本地化名称（用于显示和搜索）
+	CostumeJapaneseNames map[string]string    // 服装日文名称（用于搜索）
+	CharaName            string               // 角色显示名称
+	ExtraCharaName       string               // 角色补充名称
+	RequestID            uint64               // 角色加载请求 ID
 }
 
 // UpdateDownloadListMsg 表示更新下载列表消息.
@@ -242,30 +295,34 @@ type UpdateDownloadListMsg struct {
 	Items []DownloadListItem // 下载列表项
 }
 
-// handleInputState 处理输入状态下的消息.
-func (m *Model) handleInputState(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if msg.String() == "enter" {
-		value := strings.TrimSpace(m.TextInput.Value())
-		if value == "" {
-			m.SetError("请输入角色名称或 Live2D 模型名称")
-			return m, nil
-		}
-		m.State = StateLoading
-		select {
-		case m.SearchChan <- value:
-		default:
-		}
-		return m, m.Spinner.Tick
-	}
-	var cmd tea.Cmd
-	m.TextInput, cmd = m.TextInput.Update(msg)
-	return m, cmd
+// SelectedItem 表示选中的项目（包含翻译名）.
+type SelectedItem struct {
+	Asset       *model.Live2dAsset // 原始资源
+	DisplayName string             // 显示名称
+	NamingMode  config.NamingMode  // 下载时使用的命名模式
+}
+
+// CharaLoadRequest 表示一次角色服装加载请求.
+type CharaLoadRequest struct {
+	CharaID   int
+	RequestID uint64
+}
+
+// UpdateCharaListMsg 表示更新角色列表消息.
+type UpdateCharaListMsg struct {
+	Characters []model.CharacterInfo // 角色信息列表
+}
+
+// ShowCharaListErrorMsg 表示需要在角色列表中显示的错误.
+type ShowCharaListErrorMsg struct {
+	Message   string
+	RequestID uint64
 }
 
 // handleLoadingState 处理加载状态下的消息.
 func (m *Model) handleLoadingState(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == KeyEsc {
-		m.State = StateInput
+		m.State = StateCharaList
 		return m, nil
 	}
 	return m, nil
@@ -273,50 +330,140 @@ func (m *Model) handleLoadingState(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handleListState 处理列表状态下的消息.
 func (m *Model) handleListState(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.IsFiltering {
+		return m.handleListFilterState(msg)
+	}
+	return m.handleListNormalState(msg)
+}
+
+// handleListFilterState 处理过滤模式下的消息.
+func (m *Model) handleListFilterState(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
+	case KeyEsc:
+		m.IsFiltering = false
+		m.FilterInput.Reset()
+		m.FilterInput.Blur()
+		m.restoreAllCostumeItemsWithSelection()
+		return m, nil
+	case "/":
+		m.FilterInput.SetValue("")
+		m.applyFilter()
+		return m, nil
 	case " ":
 		if i, ok := m.Live2dList.SelectedItem().(listItem); ok {
-			i.selected = !i.selected
-			if i.selected {
-				m.SelectedIDs = append(m.SelectedIDs, m.Live2dList.Index())
-			} else {
-				for j, id := range m.SelectedIDs {
-					if id == m.Live2dList.Index() {
-						m.SelectedIDs = slices.Delete(m.SelectedIDs, j, j+1)
-						break
-					}
-				}
-			}
-			m.Live2dList.SetItem(m.Live2dList.Index(), i)
+			m.toggleItemSelection(i)
+		}
+		return m, nil
+	case KeyUp, KeyDown:
+		var cmd tea.Cmd
+		m.Live2dList, cmd = m.Live2dList.Update(msg)
+		return m, cmd
+	default:
+		var cmd tea.Cmd
+		m.FilterInput, cmd = m.FilterInput.Update(msg)
+		m.applyFilter()
+		return m, cmd
+	}
+}
+
+// handleListNormalState 处理普通模式下的消息.
+func (m *Model) handleListNormalState(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "/":
+		m.IsFiltering = true
+		m.FilterInput.Focus()
+		m.AllCostumeItems = m.getAllListItems()
+		m.Live2dList.SetItems([]list.Item{})
+		return m, textinput.Blink
+	case " ":
+		if i, ok := m.Live2dList.SelectedItem().(listItem); ok {
+			m.toggleItemSelection(i)
 		}
 	case "a":
 		m.handleSelectAll()
-	case "up":
+	case "n":
+		m.toggleNamingMode()
+	case KeyUp:
 		if m.Live2dList.Index() == 0 && len(m.Live2dList.Items()) > 0 {
 			m.Live2dList.Select(len(m.Live2dList.Items()) - 1)
 			return m, nil
 		}
-	case "down":
+	case KeyDown:
 		if m.Live2dList.Index() == len(m.Live2dList.Items())-1 && len(m.Live2dList.Items()) > 0 {
 			m.Live2dList.Select(0)
 			return m, nil
 		}
-	case "enter":
+	case KeyEnter:
 		return m.handleListEnter()
 	case KeyEsc:
-		m.State = StateInput
+		m.State = StateCharaList
 		m.Live2dList.Select(0)
-		// 清空下载项
 		m.Items = make(map[string]*DownloadItem)
 		m.ItemOrder = []string{}
 		m.updateDownloadList()
-		// 重置输入框
-		m.TextInput.Reset()
 		return m, nil
 	}
 	var cmd tea.Cmd
 	m.Live2dList, cmd = m.Live2dList.Update(msg)
 	return m, cmd
+}
+
+// toggleItemSelection 切换列表项的选择状态.
+func (m *Model) toggleItemSelection(i listItem) {
+	i.selected = !i.selected
+	// 更新 AllCostumeItems 中的对应项
+	for idx, item := range m.AllCostumeItems {
+		if li, ok := item.(listItem); ok && li.asset != nil && i.asset != nil {
+			if li.asset.String() == i.asset.String() {
+				m.AllCostumeItems[idx] = i
+				break
+			}
+		}
+	}
+	m.Live2dList.SetItem(m.Live2dList.Index(), i)
+}
+
+// getAllListItems 获取所有列表项.
+func (m *Model) getAllListItems() []list.Item {
+	items := m.Live2dList.Items()
+	if len(items) == 0 && m.AllCostumeItems != nil {
+		return m.AllCostumeItems
+	}
+	return items
+}
+
+// applyFilter 根据过滤文本过滤列表项.
+func (m *Model) applyFilter() {
+	filterText := m.FilterInput.Value()
+	if filterText == "" {
+		// 无输入时显示空列表
+		m.Live2dList.SetItems([]list.Item{})
+		return
+	}
+
+	filterLower := strings.ToLower(filterText)
+	var filtered []list.Item
+	for _, item := range m.AllCostumeItems {
+		li, ok := item.(listItem)
+		if !ok {
+			continue
+		}
+		// 搜索所有名称变体
+		if strings.Contains(strings.ToLower(li.allNames), filterLower) {
+			filtered = append(filtered, li)
+		}
+	}
+	m.Live2dList.SetItems(filtered)
+	if len(filtered) > 0 {
+		m.Live2dList.Select(0)
+	}
+}
+
+// restoreAllCostumeItemsWithSelection 恢复完整列表并保留选择状态.
+func (m *Model) restoreAllCostumeItemsWithSelection() {
+	if m.AllCostumeItems != nil {
+		m.Live2dList.SetItems(m.AllCostumeItems)
+	}
 }
 
 // handleSelectAll 处理全选/取消全选.
@@ -340,33 +487,49 @@ func (m *Model) handleSelectAll() {
 		it.selected = !allSelected
 		m.Live2dList.SetItem(i, it)
 	}
-	if !allSelected {
-		m.SelectedIDs = make([]int, len(m.Live2dList.Items()))
-		for i := range m.Live2dList.Items() {
-			m.SelectedIDs[i] = i
-		}
-	} else {
-		m.SelectedIDs = nil
-	}
 }
 
 // handleListEnter 处理列表状态下的回车键.
 func (m *Model) handleListEnter() (tea.Model, tea.Cmd) {
 	selected := m.GetSelectedItems()
 	if len(selected) > 0 {
+		var selectedItems []*SelectedItem
 		for _, asset := range selected {
-			m.AddDownloadItem(asset.String(), 1)
+			displayName := m.getDisplayName(asset)
+			m.AddDownloadItem(displayName, 1)
+			selectedItems = append(selectedItems, &SelectedItem{
+				Asset:       asset,
+				DisplayName: displayName,
+				NamingMode:  m.NamingMode,
+			})
 		}
 		m.State = StateDownloading
 		// 设置总体进度并立即更新标题
 		m.SetTotalModels(len(selected))
 		m.UpdateDownloadListTitle()
 		select {
-		case m.SelectChan <- selected:
+		case m.SelectChan <- selectedItems:
 		default:
 		}
 	}
 	return m, nil
+}
+
+// getDisplayName 获取服装的显示名称（根据当前命名模式）.
+func (m *Model) getDisplayName(asset *model.Live2dAsset) string {
+	if asset == nil {
+		return ""
+	}
+
+	// 查找对应的列表项，获取当前显示的名称
+	for _, item := range m.Live2dList.Items() {
+		if li, ok := item.(listItem); ok && li.asset != nil && li.asset.String() == asset.String() {
+			return li.title
+		}
+	}
+
+	// 如果找不到，返回原始名称
+	return asset.String()
 }
 
 // handleDownloadingState 处理下载状态下的消息.
@@ -383,14 +546,13 @@ func (m *Model) handleDownloadingState(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	case KeyEsc:
-		m.State = StateInput
 		// 清空下载项
 		m.Items = make(map[string]*DownloadItem)
 		m.ItemOrder = []string{}
 		m.updateDownloadList()
-		// 重置输入框和列表光标
-		m.TextInput.Reset()
 		m.Live2dList.Select(0)
+		// 直接返回服装列表（使用缓存）
+		m.State = StateList
 		return m, nil
 	}
 	var cmd tea.Cmd
@@ -399,21 +561,61 @@ func (m *Model) handleDownloadingState(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // handleUpdateListMsg 处理更新列表消息.
+//
+//nolint:gocognit // 复杂的列表更新逻辑
 func (m *Model) handleUpdateListMsg(msg UpdateListMsg) (tea.Model, tea.Cmd) {
+	if m.State != StateLoading || msg.RequestID != m.charaRequestID {
+		return m, nil
+	}
+
+	m.CurrentCharaName = msg.CharaName
+	m.ExtraCharaName = msg.ExtraCharaName
+	m.ClearError()
 	listItems := make([]list.Item, len(msg.Items))
 	for i, asset := range msg.Items {
-		title := ""
+		originalTitle := ""
+		chineseTitle := ""
+		japaneseTitle := ""
 		if asset != nil {
-			title = asset.String()
+			originalTitle = asset.String()
+			chineseTitle = originalTitle
+			japaneseTitle = originalTitle
+
+			// 使用 CostumeNames（string map）获取显示名称
+			if name, ok := msg.CostumeNames[asset.Costume]; ok && name != "" {
+				chineseTitle = fmt.Sprintf("%s (%s)", name, asset.Server)
+			}
+
+			if name := msg.CostumeJapaneseNames[asset.Costume]; name != "" {
+				japaneseTitle = fmt.Sprintf("%s (%s)", name, asset.Server)
+			}
+		}
+		title := originalTitle
+		if m.NamingMode == config.NamingModeChinese && chineseTitle != "" {
+			title = chineseTitle
+		}
+		// 构建所有名称变体用于搜索过滤
+		allNames := originalTitle
+		if chineseTitle != originalTitle {
+			allNames += " " + chineseTitle
+		}
+		if japaneseTitle != originalTitle && japaneseTitle != chineseTitle {
+			allNames += " " + japaneseTitle
 		}
 		listItems[i] = listItem{
-			title:    title,
-			selected: false,
-			asset:    asset,
+			title:         title,
+			originalTitle: originalTitle,
+			chineseTitle:  chineseTitle,
+			japaneseTitle: japaneseTitle,
+			allNames:      allNames,
+			selected:      false,
+			asset:         asset,
 		}
 	}
 	m.Live2dList.SetItems(listItems)
-	m.SelectedIDs = nil
+	m.AllCostumeItems = listItems // 保存完整列表用于过滤
+	m.IsFiltering = false
+	m.FilterInput.Reset()
 	m.State = StateList
 	if m.CurrentCharaName != "" {
 		title := fmt.Sprintf("选择要下载的 Live2D 模型 - %s", m.CurrentCharaName)
@@ -437,9 +639,69 @@ func (m *Model) handleUpdateDownloadListMsg(msg UpdateDownloadListMsg) (tea.Mode
 	return m, nil
 }
 
+// handleUpdateCharaListMsg 处理更新角色列表消息.
+func (m *Model) handleUpdateCharaListMsg(msg UpdateCharaListMsg) (tea.Model, tea.Cmd) {
+	listItems := make([]list.Item, len(msg.Characters))
+	for i, chara := range msg.Characters {
+		listItems[i] = charaListItem{
+			id:    chara.ID,
+			name:  chara.Name,
+			color: chara.Color,
+		}
+	}
+	m.CharaList.SetItems(listItems)
+	m.State = StateCharaList
+	return m, nil
+}
+
+// handleShowCharaListErrorMsg 显示角色列表加载错误.
+func (m *Model) handleShowCharaListErrorMsg(msg ShowCharaListErrorMsg) (tea.Model, tea.Cmd) {
+	if m.State != StateLoading || msg.RequestID != m.charaRequestID {
+		return m, nil
+	}
+
+	m.SetError(msg.Message)
+	m.State = StateCharaList
+	return m, nil
+}
+
+// handleCharaListState 处理角色列表状态下的消息.
+func (m *Model) handleCharaListState(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up":
+		if m.CharaList.Index() == 0 && len(m.CharaList.Items()) > 0 {
+			m.CharaList.Select(len(m.CharaList.Items()) - 1)
+			return m, nil
+		}
+	case "down":
+		if m.CharaList.Index() == len(m.CharaList.Items())-1 && len(m.CharaList.Items()) > 0 {
+			m.CharaList.Select(0)
+			return m, nil
+		}
+	case "enter":
+		if i, ok := m.CharaList.SelectedItem().(charaListItem); ok {
+			m.State = StateLoading
+			m.charaRequestID++
+			select {
+			case m.CharaSelectChan <- CharaLoadRequest{CharaID: i.id, RequestID: m.charaRequestID}:
+			default:
+			}
+			return m, m.Spinner.Tick
+		}
+	case KeyEsc:
+		close(m.cancelChan)
+		m.Cancel()
+		m.Quitting = true
+		return m, tea.Quit
+	}
+	var cmd tea.Cmd
+	m.CharaList, cmd = m.CharaList.Update(msg)
+	return m, cmd
+}
+
 // handleKeyMsg 处理键盘消息.
 func (m *Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if msg.String() == "ctrl+c" || (msg.String() == KeyEsc && m.State == StateInput) {
+	if msg.String() == "ctrl+c" {
 		close(m.cancelChan)
 		m.Cancel()
 		m.Quitting = true
@@ -447,8 +709,8 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch m.State {
-	case StateInput:
-		return m.handleInputState(msg)
+	case StateCharaList:
+		return m.handleCharaListState(msg)
 	case StateLoading:
 		return m.handleLoadingState(msg)
 	case StateList:
@@ -470,6 +732,8 @@ func (m *Model) handleWindowSizeMsg(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) 
 		item.Progress.Width = m.Width
 	}
 	availableHeight := msg.Height - padding*2 - 6
+	m.CharaList.SetWidth(msg.Width - padding*2)
+	m.CharaList.SetHeight(availableHeight)
 	m.Live2dList.SetWidth(msg.Width - padding*2)
 	m.Live2dList.SetHeight(availableHeight)
 	m.DownloadList.SetWidth(msg.Width - padding*2)
@@ -522,6 +786,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
+	case UpdateCharaListMsg:
+		return m.handleUpdateCharaListMsg(msg)
+	case ShowCharaListErrorMsg:
+		return m.handleShowCharaListErrorMsg(msg)
 	case UpdateListMsg:
 		return m.handleUpdateListMsg(msg)
 	case UpdateDownloadListMsg:
@@ -547,6 +815,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
+// View 渲染 TUI 界面.
+//
+//nolint:gocognit,funlen // 复杂的界面渲染逻辑
 func (m *Model) View() string {
 	if m.Quitting {
 		return "\n  下载已取消\n\n"
@@ -560,31 +831,78 @@ func (m *Model) View() string {
 	s.WriteString("\n\n")
 
 	switch m.State {
-	case StateInput:
-		s.WriteString(m.TextInput.View())
+	case StateCharaList:
+		// 自定义标题
+		s.WriteString(titleStyle.Render("选择角色"))
 		s.WriteString("\n\n")
+		// 列表内容（隐藏内置标题、分页和帮助）
+		m.CharaList.SetShowTitle(false)
+		m.CharaList.SetShowPagination(false)
+		m.CharaList.SetShowHelp(false)
+		s.WriteString(m.CharaList.View())
 		if m.ErrorMessage != "" {
-			s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000")).Render(m.ErrorMessage))
 			s.WriteString("\n\n")
+			s.WriteString(errorStyle(m.ErrorMessage))
 		}
-		s.WriteString(helpStyle("按 Enter 确认，按 Esc 或 Ctrl+C 退出"))
+		s.WriteString("\n\n")
+		s.WriteString(helpStyle("上下键选择，Enter 确认，Ctrl+C 退出"))
 
 	case StateLoading:
-		s.WriteString(m.TextInput.View())
-		s.WriteString("\n\n")
-		fmt.Fprintf(&s, "%s 正在搜索角色...", m.Spinner.View())
+		fmt.Fprintf(&s, "%s 正在加载...", m.Spinner.View())
 		s.WriteString("\n\n")
 		s.WriteString(helpStyle("按 Esc 或 Ctrl+C 退出"))
 
 	case StateList:
-		s.WriteString(m.Live2dList.View())
+		// 自定义标题（包含命名模式）
+		namingModeStr := "映射后"
+		if m.NamingMode == config.NamingModeOriginal {
+			namingModeStr = "原始"
+		}
+		if m.CurrentCharaName != "" {
+			title := fmt.Sprintf("选择要下载的 Live2D 模型 - %s | 命名: %s", m.CurrentCharaName, namingModeStr)
+			if m.ExtraCharaName != "" {
+				title = fmt.Sprintf("%s (%s) | 命名: %s", m.CurrentCharaName, m.ExtraCharaName, namingModeStr)
+			}
+			s.WriteString(titleStyle.Render(title))
+			s.WriteString("\n\n")
+		}
+		// 搜索框
+		if m.IsFiltering {
+			s.WriteString(m.FilterInput.View())
+			s.WriteString("\n\n")
+		}
+		// 列表内容（隐藏内置标题、分页和帮助）
+		m.Live2dList.SetShowTitle(false)
+		m.Live2dList.SetShowPagination(false)
+		m.Live2dList.SetShowHelp(false)
+		if m.IsFiltering {
+			// 搜索模式：隐藏列表组件的 "No items"，自己显示一个
+			if len(m.Live2dList.Items()) == 0 {
+				s.WriteString(helpStyle("  No items"))
+			} else {
+				s.WriteString(m.Live2dList.View())
+			}
+		} else {
+			s.WriteString(m.Live2dList.View())
+		}
 		s.WriteString("\n\n")
-		s.WriteString(helpStyle("使用空格选择/取消选择，A 全选/取消全选，Enter 确认，Esc 返回，Ctrl+C 退出"))
+		if m.IsFiltering {
+			s.WriteString(helpStyle("输入过滤，Esc 退出搜索"))
+		} else {
+			s.WriteString(helpStyle("空格选择，A 全选，N 切换命名，/ 搜索，Enter 下载，Esc 返回"))
+		}
 
 	case StateDownloading:
+		// 自定义标题
+		s.WriteString(titleStyle.Render(m.DownloadList.Title))
+		s.WriteString("\n\n")
+		// 列表内容（隐藏内置标题、分页和帮助）
+		m.DownloadList.SetShowTitle(false)
+		m.DownloadList.SetShowPagination(false)
+		m.DownloadList.SetShowHelp(false)
 		s.WriteString(m.DownloadList.View())
 		s.WriteString("\n\n")
-		s.WriteString(helpStyle("按 Esc 返回主菜单，Ctrl+C 退出"))
+		s.WriteString(helpStyle("Esc 返回服装列表"))
 	}
 
 	return s.String()
@@ -640,6 +958,33 @@ func (m *Model) ClearError() {
 	m.ErrorMessage = ""
 }
 
+// toggleNamingMode 切换命名模式.
+func (m *Model) toggleNamingMode() {
+	if m.NamingMode == config.NamingModeChinese {
+		m.NamingMode = config.NamingModeOriginal
+	} else {
+		m.NamingMode = config.NamingModeChinese
+	}
+	m.refreshListNames()
+}
+
+// refreshListNames 根据当前命名模式刷新列表显示名称.
+func (m *Model) refreshListNames() {
+	items := m.Live2dList.Items()
+	for i, item := range items {
+		li, ok := item.(listItem)
+		if !ok {
+			continue
+		}
+		if m.NamingMode == config.NamingModeChinese {
+			li.title = li.chineseTitle
+		} else {
+			li.title = li.originalTitle
+		}
+		m.Live2dList.SetItem(i, li)
+	}
+}
+
 func (m *Model) updateDownloadList() {
 	items := make([]list.Item, 0, len(m.Items))
 	// 按照 ItemOrder 的顺序添加下载项
@@ -671,7 +1016,6 @@ func (m *Model) SetLive2DList(items []*model.Live2dAsset) {
 		}
 	}
 	m.Live2dList.SetItems(listItems)
-	m.SelectedIDs = nil
 	// 设置列表状态
 	m.State = StateList
 }
@@ -679,14 +1023,14 @@ func (m *Model) SetLive2DList(items []*model.Live2dAsset) {
 func (m *Model) GetSelectedItems() []*model.Live2dAsset {
 	// 使用 map 来确保唯一性
 	unique := make(map[string]*model.Live2dAsset)
-	for _, id := range m.SelectedIDs {
-		if id < len(m.Live2dList.Items()) {
-			if item, ok := m.Live2dList.Items()[id].(listItem); ok {
-				if item.asset != nil {
-					unique[item.asset.String()] = item.asset
-				} else {
-					unique[item.title] = nil
-				}
+	// 直接检查每个 item 的 selected 字段，不依赖位置索引
+	// 这样即使列表被过滤/恢复，选中状态也不会丢失
+	for _, item := range m.Live2dList.Items() {
+		if li, ok := item.(listItem); ok && li.selected {
+			if li.asset != nil {
+				unique[li.asset.String()] = li.asset
+			} else {
+				unique[li.title] = nil
 			}
 		}
 	}
@@ -736,12 +1080,13 @@ func selectedLess(a, b *model.Live2dAsset) bool {
 	return sa < sb
 }
 
-func (m *Model) GetSearchChan() <-chan string {
-	return m.SearchChan
+func (m *Model) GetSelectChan() <-chan []*SelectedItem {
+	return m.SelectChan
 }
 
-func (m *Model) GetSelectChan() <-chan []*model.Live2dAsset {
-	return m.SelectChan
+// GetCharaSelectChan 返回角色选择通道.
+func (m *Model) GetCharaSelectChan() <-chan CharaLoadRequest {
+	return m.CharaSelectChan
 }
 
 // GetCancelChan 返回取消通道.

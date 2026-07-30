@@ -150,6 +150,22 @@ func TestFetchData(t *testing.T) {
 	}
 }
 
+func TestFetchDataReportsUnexpectedHTMLResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+
+	client := api.NewClient()
+	client.SetUseCharaCache(false)
+
+	data, err := client.FetchData(context.Background(), server.URL, "")
+
+	require.Nil(t, data)
+	require.EqualError(t, err, "来自 Bestdori 的响应不是有效数据（返回了网页内容）: "+server.URL)
+}
+
 func TestGetCharaRoster(t *testing.T) {
 	// 创建临时目录用于测试缓存
 	tempDir := t.TempDir()

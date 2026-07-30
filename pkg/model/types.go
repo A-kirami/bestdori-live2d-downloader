@@ -130,3 +130,10 @@ type MatchChara struct {
 	Name  string   `json:"name"`  // 角色名称
 	Names []string `json:"names"` // 角色所有可能的名称列表
 }
+
+// CharacterInfo 表示角色信息（用于角色列表显示）.
+type CharacterInfo struct {
+	ID    int    // 角色ID
+	Name  string // 中文名
+	Color string // 角色颜色代码
+}

@@ -13,12 +13,21 @@ type AssetServerConfig struct {
 	AssetsIndexURL string // 资源索引 API URL
 }
 
+// NamingMode 表示文件夹命名模式.
+type NamingMode int
+
+const (
+	NamingModeChinese  NamingMode = iota // 使用中文命名
+	NamingModeOriginal                   // 使用原始文件名
+)
+
 // Config 表示程序的配置结构.
 type Config struct {
 	// 路径配置
 	Live2dSavePath string // Live2D 模型保存路径
 	CharaCachePath string // 角色信息缓存路径
 	LogPath        string // 日志文件保存路径
+	NamingMode     NamingMode
 
 	// 缓存配置
 	UseCharaCache bool          // 是否使用角色信息缓存
@@ -69,6 +78,7 @@ func DefaultConfig() *Config {
 		Live2dSavePath: "live2d_download",
 		CharaCachePath: "live2d_chara_cache",
 		LogPath:        "logs",
+		NamingMode:     NamingModeChinese,
 
 		// 缓存配置
 		UseCharaCache: true,

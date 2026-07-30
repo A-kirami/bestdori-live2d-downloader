@@ -10,13 +10,16 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/A-kirami/bestdori-live2d-downloader/pkg/config"
 	"github.com/A-kirami/bestdori-live2d-downloader/pkg/log"
 	"github.com/A-kirami/bestdori-live2d-downloader/pkg/model"
+	"github.com/A-kirami/bestdori-live2d-downloader/pkg/naming"
 )
 
 // Client 表示 API 客户端
@@ -84,6 +87,8 @@ func (c *Client) readCacheData(cacheFile string) (map[string]any, error) {
 // 返回:
 //   - map[string]any: 获取的数据
 //   - error: 错误信息
+//
+//nolint:gocognit // 复杂的数据获取和缓存逻辑
 func (c *Client) FetchData(ctx context.Context, url string, cache string) (map[string]any, error) {
 	if c.useCharaCache && cache != "" {
 		cacheFile := filepath.Join(c.charaCachePath, cache)
@@ -115,6 +120,13 @@ func (c *Client) FetchData(ctx context.Context, url string, cache string) (map[s
 	if resp.StatusCode != http.StatusOK {
 		log.DefaultLogger.Error().Str("url", url).Int("statusCode", resp.StatusCode).Msg("HTTP错误")
 		return nil, fmt.Errorf("HTTP错误: %d", resp.StatusCode)
+	}
+
+	// 检查 Content-Type，避免将 HTML 错误页面当作 JSON 解析
+	contentType := resp.Header.Get("Content-Type")
+	if strings.HasPrefix(contentType, "text/html") {
+		log.DefaultLogger.Error().Str("url", url).Str("contentType", contentType).Msg("返回了HTML而非JSON")
+		return nil, fmt.Errorf("来自 Bestdori 的响应不是有效数据（返回了网页内容）: %s", url)
 	}
 
 	var result map[string]any
@@ -152,6 +164,417 @@ func (c *Client) FetchData(ctx context.Context, url string, cache string) (map[s
 func (c *Client) GetCharaRoster(ctx context.Context) (map[string]any, error) {
 	url := fmt.Sprintf("%s/all.2.json", c.charaRosterURL)
 	return c.FetchData(ctx, url, "chara_roster.json")
+}
+
+// GetCharacterNames 获取所有角色的中文名称映射
+// 返回 map[characterID]chineseFullName
+// 参数:
+//   - ctx: 上下文
+//
+// 返回:
+//   - map[string]string: 角色ID到中文全名的映射
+//   - error: 错误信息
+func (c *Client) GetCharacterNames(ctx context.Context) (map[string]string, error) {
+	url := fmt.Sprintf("%s/all.5.json", c.charaRosterURL)
+	data, err := c.FetchData(ctx, url, "chara_names_5.json")
+	if err != nil {
+		return nil, err
+	}
+
+	names := make(map[string]string)
+	for charaID, info := range data {
+		charaInfo, ok := info.(map[string]any)
+		if !ok {
+			continue
+		}
+		// 使用 characterName（全名）而非 firstName
+		charaNameList, ok := charaInfo["characterName"].([]any)
+		if !ok || len(charaNameList) == 0 {
+			continue
+		}
+		chineseName := selectLocalizedName(charaNameList)
+		if chineseName != "" {
+			names[charaID] = chineseName
+		}
+	}
+
+	// 特殊角色：米歇尔/奥泽美咲 (ID 15)
+	if name, ok := names["15"]; ok {
+		names["15"] = name + "/奥泽 美咲"
+	}
+
+	return names, nil
+}
+
+// CharacterInfo 表示角色信息.
+type CharacterInfo = model.CharacterInfo
+
+// defaultCharaColors 没有颜色代码的角色的默认颜色映射.
+//
+//nolint:gochecknoglobals // 全局变量，用于存储角色默认颜色
+var defaultCharaColors = map[int]string{
+	601: "#DD33CC", // 奥泽美咲 (Michelle 真人形态)
+}
+
+const fallbackCharaColor = "#808080"
+
+func resolveCharaColor(charaID int, colorCode string) string {
+	if colorCode = strings.TrimSpace(colorCode); colorCode != "" {
+		return colorCode
+	}
+	if color, ok := defaultCharaColors[charaID]; ok {
+		return color
+	}
+	return fallbackCharaColor
+}
+
+// GetCharacterInfoList 获取所有角色信息列表（包含颜色）
+// 参数:
+//   - ctx: 上下文
+//
+// 返回:
+//   - []CharacterInfo: 角色信息列表
+//   - error: 错误信息
+func (c *Client) GetCharacterInfoList(ctx context.Context) ([]CharacterInfo, error) {
+	url := fmt.Sprintf("%s/all.5.json", c.charaRosterURL)
+	data, err := c.FetchData(ctx, url, "chara_names_5.json")
+	if err != nil {
+		return nil, err
+	}
+
+	var result []CharacterInfo
+	for charaID, info := range data {
+		id, parseErr := strconv.Atoi(charaID)
+		if parseErr != nil || id > 1000 {
+			continue
+		}
+
+		charaInfo, ok := info.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		// 使用 characterName（全名）而不是 firstName
+		charaNameList, ok := charaInfo["characterName"].([]any)
+		if !ok || len(charaNameList) == 0 {
+			continue
+		}
+
+		chineseName := selectLocalizedName(charaNameList)
+		if chineseName == "" {
+			continue
+		}
+
+		colorCode, _ := charaInfo["colorCode"].(string)
+		colorCode = resolveCharaColor(id, colorCode)
+
+		result = append(result, CharacterInfo{
+			ID:    id,
+			Name:  chineseName,
+			Color: colorCode,
+		})
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].ID < result[j].ID
+	})
+
+	return result, nil
+}
+
+func selectLocalizedName(names []any) string {
+	for _, index := range [...]int{3, 2, 0, 1} {
+		if index >= len(names) {
+			continue
+		}
+		name, ok := names[index].(string)
+		if !ok {
+			continue
+		}
+		if name = strings.TrimSpace(name); name != "" {
+			return name
+		}
+	}
+	return ""
+}
+
+func parseCostumeNameData(
+	costumeData map[string]any,
+) (map[string]string, map[string]string) {
+	names := make(map[string]string)
+	japaneseNames := make(map[string]string)
+
+	for _, value := range costumeData {
+		costume, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		bundleName, _ := costume["assetBundleName"].(string)
+		descriptions, ok := costume["description"].([]any)
+		if bundleName == "" || !ok || len(descriptions) == 0 {
+			continue
+		}
+
+		if localizedName := selectLocalizedName(descriptions); localizedName != "" {
+			names[bundleName] = localizedName
+		}
+		japaneseName, _ := descriptions[0].(string)
+		if japaneseName = strings.TrimSpace(japaneseName); japaneseName != "" {
+			japaneseNames[bundleName] = japaneseName
+		}
+	}
+
+	return names, japaneseNames
+}
+
+// collectAllLive2dNames 收集所有 Live2D 名称
+// 从角色 API 的 seasonCostumeListMap 和资源索引中收集.
+//
+//nolint:gocognit // 遍历嵌套 JSON 结构
+func (c *Client) collectAllLive2dNames(ctx context.Context) (map[string]bool, error) {
+	charaURL := fmt.Sprintf("%s/all.5.json", c.charaRosterURL)
+	charaData, err := c.FetchData(ctx, charaURL, "chara_names_5.json")
+	if err != nil {
+		return nil, fmt.Errorf("获取角色数据失败: %w", err)
+	}
+
+	live2dNames := make(map[string]bool)
+	for charaIDStr, info := range charaData {
+		charaID, parseErr := strconv.Atoi(charaIDStr)
+		if parseErr != nil || charaID > 1000 {
+			continue
+		}
+		charaInfo, charaOk := info.(map[string]any)
+		if !charaOk {
+			continue
+		}
+		seasonMap, seasonMapOk := charaInfo["seasonCostumeListMap"].(map[string]any)
+		if !seasonMapOk {
+			continue
+		}
+		entries, entriesOk := seasonMap["entries"].(map[string]any)
+		if !entriesOk {
+			continue
+		}
+		for _, season := range entries {
+			seasonData, seasonOk := season.(map[string]any)
+			if !seasonOk {
+				continue
+			}
+			costumeEntries, costumeOk := seasonData["entries"].([]any)
+			if !costumeOk {
+				continue
+			}
+			for _, entry := range costumeEntries {
+				entryData, entryOk := entry.(map[string]any)
+				if !entryOk {
+					continue
+				}
+				live2dName, _ := entryData["live2dAssetBundleName"].(string)
+				if live2dName != "" {
+					live2dNames[live2dName] = true
+				}
+			}
+		}
+	}
+
+	// 也从资源索引获取所有 Live2D 服装名
+	live2dAssets, err := c.getLive2dAssets(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("获取资源索引失败: %w", err)
+	}
+	for name := range live2dAssets {
+		live2dNames[name] = true
+	}
+
+	return live2dNames, nil
+}
+
+// collectEventNames 获取活动名称映射（用于 event_XXX_story_YY 等模式）
+// 优先级：简体中文(3) > 繁体中文(2) > 日语(0) > 英语(1).
+func (c *Client) collectEventNames(ctx context.Context) map[int]string {
+	eventNames := make(map[int]string)
+	eventsURL := "https://bestdori.com/api/events/all.5.json"
+	eventsData, eventsErr := c.FetchData(ctx, eventsURL, "events_all_5.json")
+	if eventsErr == nil {
+		for eventIDStr, info := range eventsData {
+			eventID, parseErr := strconv.Atoi(eventIDStr)
+			if parseErr != nil {
+				continue
+			}
+			eventInfo, ok := info.(map[string]any)
+			if !ok {
+				continue
+			}
+			nameList, ok := eventInfo["eventName"].([]any)
+			if !ok || len(nameList) == 0 {
+				continue
+			}
+			name := selectLocalizedName(nameList)
+			if name != "" {
+				eventNames[eventID] = name
+			}
+		}
+	}
+	return eventNames
+}
+
+// GetCostumeNames 获取服装的展示名称和多语言搜索信息
+// 策略：直接用 assetBundleName 匹配，优先简体中文(index 3)，无则繁体中文(index 2)，都没有则查硬编码表
+// 参数:
+//   - ctx: 上下文
+//
+// 返回:
+//   - map[string]string: Live2D服装名到展示名称的映射
+//   - map[string]string: Live2D服装名到日文名称的映射
+//   - error: 错误信息
+//
+//nolint:gocognit,gocyclo,cyclop,funlen // 复杂的多语言映射逻辑
+func (c *Client) GetCostumeNames(
+	ctx context.Context,
+) (map[string]string, map[string]string, error) {
+	costumeURL := "https://bestdori.com/api/costumes/all.5.json"
+	costumeData, err := c.FetchData(ctx, costumeURL, "costume_names_5.json")
+	if err != nil {
+		return nil, nil, fmt.Errorf("获取服装数据失败: %w", err)
+	}
+
+	names, japaneseNames := parseCostumeNameData(costumeData)
+
+	live2dNames, err := c.collectAllLive2dNames(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	eventNames := c.collectEventNames(ctx)
+
+	// 预计算每个角色+活动的剧情编号数量
+	charaEventStoryNumbers := make(map[string]map[string]bool)
+	storyWithNumRe := regexp.MustCompile(`^event_?(\d+)_story_?(\w+)$`)
+	storyNoNumRe := regexp.MustCompile(`^event_?(\d+)_story$`)
+	for live2dName := range live2dNames {
+		proc := strings.TrimPrefix(live2dName, "bili_")
+		parts := strings.SplitN(proc, "_", 2)
+		if len(parts) < 2 {
+			continue
+		}
+		charaID := parts[0]
+		suffix := parts[1]
+		if m := storyWithNumRe.FindStringSubmatch(suffix); len(m) > 2 { //nolint:nestif // 复杂的剧情编号统计逻辑
+			if _, parseErr := strconv.Atoi(m[1]); parseErr == nil {
+				num := strings.TrimLeft(m[2], "0")
+				if num == "" {
+					num = "1"
+				}
+				key := charaID + ":" + m[1]
+				if charaEventStoryNumbers[key] == nil {
+					charaEventStoryNumbers[key] = make(map[string]bool)
+				}
+				charaEventStoryNumbers[key][num] = true
+			}
+		} else if n := storyNoNumRe.FindStringSubmatch(suffix); len(n) > 1 {
+			if _, parseErr := strconv.Atoi(n[1]); parseErr == nil {
+				key := charaID + ":" + n[1]
+				if charaEventStoryNumbers[key] == nil {
+					charaEventStoryNumbers[key] = make(map[string]bool)
+				}
+				charaEventStoryNumbers[key]["1"] = true
+			}
+		}
+	}
+	charaEventStoryCounts := make(map[string]int)
+	for key, nums := range charaEventStoryNumbers {
+		charaEventStoryCounts[key] = len(nums)
+	}
+
+	for live2dName := range live2dNames {
+		// 处理 bili_ 前缀
+		nameToProcess := strings.TrimPrefix(live2dName, "bili_")
+		parts := strings.SplitN(nameToProcess, "_", 2)
+		if len(parts) < 2 {
+			continue
+		}
+		suffix := parts[1]
+
+		// event_XXX_story_YY 模式：始终使用活动翻译（覆盖 API 卡牌描述）
+		if storyWithNumRe.MatchString(suffix) || storyNoNumRe.MatchString(suffix) {
+			if translated := naming.TranslateCostumeSuffixWithStoryCount(
+				suffix,
+				eventNames,
+				charaEventStoryCounts,
+				parts[0],
+			); translated != "" {
+				if apiName, ok := names[live2dName]; ok && apiName != translated {
+					names[live2dName] = translated + "(" + apiName + ")"
+				} else {
+					names[live2dName] = translated
+				}
+				continue
+			}
+		}
+
+		if _, exists := names[live2dName]; exists {
+			continue
+		}
+
+		// 年份后缀 API 映射查找
+		if yearMatch := regexp.MustCompile(`^(.+)-(\d{4})$`).FindStringSubmatch(suffix); len(yearMatch) > 2 {
+			baseSuffix := yearMatch[1]
+			year := yearMatch[2]
+			baseLive2dName := parts[0] + "_" + baseSuffix
+			if baseName, ok := names[baseLive2dName]; ok && baseName != "" {
+				names[live2dName] = fmt.Sprintf("%s(%s)", baseName, year)
+				continue
+			}
+		}
+
+		// 使用模式匹配翻译
+		if translated := naming.TranslateCostumeSuffixWithStoryCount(
+			suffix,
+			eventNames,
+			charaEventStoryCounts,
+			parts[0],
+		); translated != "" {
+			names[live2dName] = translated
+		}
+	}
+
+	// 检测并解决中文名称冲突：同一角色内重名时在末尾追加原始日语名以消歧
+	// 不同角色可以有同名服装（路径为 角色名/服装名），无需消歧.
+	// 解决例如 013_live_event_198_ssr 和 013_live_sr_01 都翻译为"大家一起来！"时
+	// 下载路径冲突导致模型被误判为重复而跳过的问题.
+	type nameEntry struct {
+		live2dName  string
+		chineseName string
+	}
+	charaGroups := make(map[string][]nameEntry)
+	for live2dName, chineseName := range names {
+		// 提取角色 ID：格式为 charaID_suffix 或 bili_charaID_suffix
+		charaID := live2dName
+		charaID = strings.TrimPrefix(charaID, "bili_")
+		if idx := strings.Index(charaID, "_"); idx > 0 {
+			charaID = charaID[:idx]
+		}
+		charaGroups[charaID] = append(charaGroups[charaID], nameEntry{live2dName, chineseName})
+	}
+	for _, entries := range charaGroups {
+		nameCount := make(map[string][]string)
+		for _, e := range entries {
+			nameCount[e.chineseName] = append(nameCount[e.chineseName], e.live2dName)
+		}
+		for chineseName, live2dNamesList := range nameCount {
+			if len(live2dNamesList) <= 1 {
+				continue
+			}
+			for _, live2dName := range live2dNamesList {
+				if japaneseName, ok := japaneseNames[live2dName]; ok && japaneseName != "" {
+					names[live2dName] = chineseName + "(" + japaneseName + ")"
+				}
+			}
+		}
+	}
+
+	return names, japaneseNames, nil
 }
 
 // GetChara 获取指定角色的详细信息
@@ -223,6 +646,11 @@ func (c *Client) getLive2dAssets(ctx context.Context) (map[string]string, error)
 	}
 
 	return live2dAssets, nil
+}
+
+// GetLive2dAssets 获取 Live2D 资源映射（公开方法）.
+func (c *Client) GetLive2dAssets(ctx context.Context) (map[string]string, error) {
+	return c.getLive2dAssets(ctx)
 }
 
 func isCharaCostume(costume string, charaID int) bool {

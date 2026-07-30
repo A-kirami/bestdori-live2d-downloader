@@ -23,6 +23,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+const physicsFileName = "physics.json"
+
 // MotionFile 表示动作文件的类型.
 type MotionFile = model.MotionFile
 
@@ -253,13 +255,14 @@ func (d *Downloader) DownloadBundleFile(
 // Live2dBuilder 表示 Live2D 构建器
 // 负责构建完整的 Live2D 模型，包括下载所有必要文件.
 type Live2dBuilder struct {
-	path       string                    // 模型保存路径
-	server     *config.AssetServerConfig // 模型所属 Bestdori 服务器
-	data       *model.BuildData          // 构建数据
-	model      *model.Live2dModel        // Live2D 模型
-	dataPath   string                    // 数据文件路径
-	downloader *Downloader               // 下载器实例
-	ModelName  string                    // 模型名称
+	path        string                    // 模型保存路径
+	server      *config.AssetServerConfig // 模型所属 Bestdori 服务器
+	data        *model.BuildData          // 构建数据
+	model       *model.Live2dModel        // Live2D 模型
+	dataPath    string                    // 数据文件路径
+	downloader  *Downloader               // 下载器实例
+	ModelName   string                    // 模型名称（原始名）
+	DisplayName string                    // 显示名称（翻译名）
 }
 
 // NewLive2dBuilder 创建新的 Live2D 构建器实例
@@ -268,7 +271,8 @@ type Live2dBuilder struct {
 //   - server: Bestdori 服务器配置
 //   - buildData: 构建数据
 //   - downloader: 下载器实例
-//   - modelName: 模型名称
+//   - modelName: 模型名称（原始名）
+//   - displayName: 显示名称（翻译名）
 //
 // 返回:
 //   - *Live2dBuilder: 新的 Live2D 构建器实例
@@ -278,15 +282,17 @@ func NewLive2dBuilder(
 	buildData *model.BuildData,
 	downloader *Downloader,
 	modelName string,
+	displayName string,
 ) *Live2dBuilder {
 	return &Live2dBuilder{
-		path:       path,
-		server:     server,
-		data:       buildData,
-		model:      &model.Live2dModel{Motions: make(map[string][]model.MotionFile)},
-		dataPath:   filepath.Join(path, "data"),
-		downloader: downloader,
-		ModelName:  modelName,
+		path:        path,
+		server:      server,
+		data:        buildData,
+		model:       &model.Live2dModel{Motions: make(map[string][]model.MotionFile)},
+		dataPath:    filepath.Join(path, "data"),
+		downloader:  downloader,
+		ModelName:   modelName,
+		DisplayName: displayName,
 	}
 }
 
@@ -392,7 +398,7 @@ func (b *Live2dBuilder) processExistingFiles(existingFiles []string) (int, error
 		// 更新当前文件的进度
 		completedFiles++
 		if b.downloader.TuiModel != nil {
-			b.downloader.TuiModel.UpdateProgress(b.ModelName, completedFiles)
+			b.downloader.TuiModel.UpdateProgress(b.getDisplayName(), completedFiles)
 		}
 
 		// 更新模型数据
@@ -434,7 +440,7 @@ func (b *Live2dBuilder) createModelData() error {
 	if err != nil {
 		log.DefaultLogger.Error().Str("modelName", b.ModelName).Err(err).Msg("序列化模型数据失败")
 		if b.downloader.TuiModel != nil {
-			b.downloader.TuiModel.SetError(fmt.Sprintf("%s: 创建模型数据失败: %v", b.ModelName, err))
+			b.downloader.TuiModel.SetError(fmt.Sprintf("%s: 创建模型数据失败: %v", b.getDisplayName(), err))
 		}
 		return fmt.Errorf("序列化模型数据失败: %w", err)
 	}
@@ -459,7 +465,7 @@ func (b *Live2dBuilder) prepareDownloadTasks() ([]downloadTask, []string) {
 
 	// 模型文件
 	modelFile := filepath.Join(b.dataPath, "model.moc")
-	if _, err := os.Stat(modelFile); os.IsNotExist(err) {
+	if !isRegularFile(modelFile) {
 		tasks = append(tasks, downloadTask{
 			bundleFile:    b.data.Model,
 			filePath:      modelFile,
@@ -471,8 +477,8 @@ func (b *Live2dBuilder) prepareDownloadTasks() ([]downloadTask, []string) {
 	}
 
 	// 物理文件
-	physicsFile := filepath.Join(b.dataPath, "physics.json")
-	if _, err := os.Stat(physicsFile); os.IsNotExist(err) {
+	physicsFile := filepath.Join(b.dataPath, physicsFileName)
+	if !isRegularFile(physicsFile) {
 		tasks = append(tasks, downloadTask{
 			bundleFile:    b.data.Physics,
 			filePath:      physicsFile,
@@ -487,7 +493,7 @@ func (b *Live2dBuilder) prepareDownloadTasks() ([]downloadTask, []string) {
 	texturePath := filepath.Join(b.dataPath, "textures")
 	for _, texture := range b.data.Textures {
 		file := filepath.Join(texturePath, texture.FileName)
-		if _, err := os.Stat(file); os.IsNotExist(err) {
+		if !isRegularFile(file) {
 			tasks = append(tasks, downloadTask{
 				bundleFile:    texture,
 				filePath:      file,
@@ -503,7 +509,7 @@ func (b *Live2dBuilder) prepareDownloadTasks() ([]downloadTask, []string) {
 	motionPath := filepath.Join(b.dataPath, "motions")
 	for _, motion := range b.data.Motions {
 		file := filepath.Join(motionPath, motion.FileName)
-		if _, err := os.Stat(file); os.IsNotExist(err) {
+		if !isRegularFile(file) {
 			tasks = append(tasks, downloadTask{
 				bundleFile:    motion,
 				filePath:      file,
@@ -519,7 +525,7 @@ func (b *Live2dBuilder) prepareDownloadTasks() ([]downloadTask, []string) {
 	expressionPath := filepath.Join(b.dataPath, "expressions")
 	for _, expression := range b.data.Expressions {
 		file := filepath.Join(expressionPath, expression.FileName)
-		if _, err := os.Stat(file); os.IsNotExist(err) {
+		if !isRegularFile(file) {
 			tasks = append(tasks, downloadTask{
 				bundleFile:    expression,
 				filePath:      file,
@@ -593,7 +599,7 @@ func (b *Live2dBuilder) processDownloadResults(ctx context.Context, tasks []down
 			// 更新当前文件的进度
 			completedFiles++
 			if b.downloader.TuiModel != nil {
-				b.downloader.TuiModel.UpdateProgress(b.ModelName, completedFiles)
+				b.downloader.TuiModel.UpdateProgress(b.getDisplayName(), completedFiles)
 			}
 
 			// 更新模型数据
@@ -624,7 +630,7 @@ func (b *Live2dBuilder) setupDownloadEnvironment() (context.Context, error) {
 	if err := os.MkdirAll(b.dataPath, 0750); err != nil {
 		log.DefaultLogger.Error().Str("modelName", b.ModelName).Str("path", b.dataPath).Err(err).Msg("创建目录失败")
 		if b.downloader.TuiModel != nil {
-			b.downloader.TuiModel.SetError(fmt.Sprintf("%s: 创建目录失败: %v", b.ModelName, err))
+			b.downloader.TuiModel.SetError(fmt.Sprintf("%s: 创建目录失败: %v", b.getDisplayName(), err))
 		}
 		<-b.downloader.modelSem // 释放信号量
 		return nil, fmt.Errorf("创建目录失败: %w", err)
@@ -633,18 +639,34 @@ func (b *Live2dBuilder) setupDownloadEnvironment() (context.Context, error) {
 	return ctx, nil
 }
 
+// getDisplayName 获取显示名称（优先使用翻译名）.
+func (b *Live2dBuilder) getDisplayName() string {
+	if b.DisplayName != "" {
+		return b.DisplayName
+	}
+	return b.ModelName
+}
+
+// TotalFilesForBuildData 计算构建数据中的总文件数.
+func TotalFilesForBuildData(data *model.BuildData) int {
+	if data == nil {
+		return 0
+	}
+	return 1 + // model.moc
+		1 + // physics.json
+		len(data.Textures) +
+		len(data.Motions) +
+		len(data.Expressions)
+}
+
 // initializeDownloadProgress 初始化下载进度.
 func (b *Live2dBuilder) initializeDownloadProgress() {
-	totalFiles := 1 + // model.moc
-		1 + // physics.json
-		len(b.data.Textures) + // textures
-		len(b.data.Motions) + // motions
-		len(b.data.Expressions) // expressions
+	totalFiles := TotalFilesForBuildData(b.data)
 
 	log.DefaultLogger.Info().Str("modelName", b.ModelName).Int("totalFiles", totalFiles).Msg("需要下载的文件总数")
 
 	if b.downloader.TuiModel != nil {
-		b.downloader.TuiModel.AddDownloadItem(b.ModelName, totalFiles)
+		b.downloader.TuiModel.AddDownloadItem(b.getDisplayName(), totalFiles)
 	}
 }
 
@@ -673,7 +695,7 @@ func (b *Live2dBuilder) handleDownloadTasks(ctx context.Context, tasks []downloa
 	// 处理下载结果
 	if err := b.processDownloadResults(ctx, tasks, completedFiles); err != nil {
 		if b.downloader.TuiModel != nil {
-			b.downloader.TuiModel.SendError(b.ModelName, err)
+			b.downloader.TuiModel.SendError(b.getDisplayName(), err)
 		}
 		return err
 	}
@@ -702,9 +724,16 @@ func (b *Live2dBuilder) Construct() error {
 	completedFiles, err := b.processExistingFiles(existingFiles)
 	if err != nil {
 		if b.downloader.TuiModel != nil {
-			b.downloader.TuiModel.SendError(b.ModelName, err)
+			b.downloader.TuiModel.SendError(b.getDisplayName(), err)
 		}
 		return err
+	}
+
+	// 如果所有文件已存在，确保进度显示为 100%
+	if len(tasks) == 0 && completedFiles > 0 {
+		if b.downloader.TuiModel != nil {
+			b.downloader.TuiModel.UpdateProgress(b.getDisplayName(), completedFiles)
+		}
 	}
 
 	// 处理下载任务
@@ -721,4 +750,69 @@ func (b *Live2dBuilder) Construct() error {
 //   - *api.Client: API客户端实例
 func (d *Downloader) GetAPIClient() *api.Client {
 	return d.apiClient
+}
+
+func isRegularFile(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
+}
+
+// IsModelComplete 检查模型目录是否已完整下载
+// 参数:
+//   - modelPath: 模型保存路径
+//   - buildData: 构建数据
+//
+// 返回:
+//   - bool: 模型是否完整
+func IsModelComplete(modelPath string, buildData *model.BuildData) bool {
+	dataPath := filepath.Join(modelPath, "data")
+
+	// 检查 model.moc
+	modelFile := filepath.Join(dataPath, "model.moc")
+	if !isRegularFile(modelFile) {
+		return false
+	}
+
+	// 检查纹理文件
+	texturePath := filepath.Join(dataPath, "textures")
+	for _, texture := range buildData.Textures {
+		file := filepath.Join(texturePath, texture.FileName)
+		if !isRegularFile(file) {
+			return false
+		}
+	}
+
+	// 检查动作文件
+	motionPath := filepath.Join(dataPath, "motions")
+	for _, motion := range buildData.Motions {
+		file := filepath.Join(motionPath, motion.FileName)
+		if !isRegularFile(file) {
+			return false
+		}
+	}
+
+	// 检查表情文件
+	expressionPath := filepath.Join(dataPath, "expressions")
+	for _, expression := range buildData.Expressions {
+		file := filepath.Join(expressionPath, expression.FileName)
+		if !isRegularFile(file) {
+			return false
+		}
+	}
+
+	// 检查 model.json
+	modelJSON := filepath.Join(modelPath, "model.json")
+	if !isRegularFile(modelJSON) {
+		return false
+	}
+
+	// 检查 physics.json（仅当存在物理数据时）
+	if buildData.Physics.FileName != "" {
+		physicsFile := filepath.Join(dataPath, physicsFileName)
+		if !isRegularFile(physicsFile) {
+			return false
+		}
+	}
+
+	return true
 }

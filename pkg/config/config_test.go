@@ -18,6 +18,7 @@ func TestDefaultConfig(t *testing.T) {
 	assert.Equal(t, "live2d_download", cfg.Live2dSavePath, "Live2dSavePath should be correct")
 	assert.Equal(t, "live2d_chara_cache", cfg.CharaCachePath, "CharaCachePath should be correct")
 	assert.Equal(t, "logs", cfg.LogPath, "LogPath should be correct")
+	assert.Equal(t, config.NamingModeChinese, cfg.NamingMode, "NamingMode should be correct")
 
 	// 测试缓存配置
 	assert.True(t, cfg.UseCharaCache, "UseCharaCache should be true")
@@ -52,6 +53,7 @@ func TestInit(t *testing.T) {
 	assert.Equal(t, defaultCfg.Live2dSavePath, cfg.Live2dSavePath, "Live2dSavePath should match default")
 	assert.Equal(t, defaultCfg.CharaCachePath, cfg.CharaCachePath, "CharaCachePath should match default")
 	assert.Equal(t, defaultCfg.LogPath, cfg.LogPath, "LogPath should match default")
+	assert.Equal(t, defaultCfg.NamingMode, cfg.NamingMode, "NamingMode should match default")
 	assert.Equal(t, defaultCfg.UseCharaCache, cfg.UseCharaCache, "UseCharaCache should match default")
 	assert.Equal(t, defaultCfg.CacheDuration, cfg.CacheDuration, "CacheDuration should match default")
 	defAssetServer := defaultCfg.AssetServers[defaultCfg.DefaultAssetServer]
