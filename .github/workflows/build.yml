@@ -26,6 +26,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          tag="$(git describe --tags --abbrev=0 --match 'v[0-9]*')"
+          echo "value=${tag#v}" >> "$GITHUB_OUTPUT"
 
       - name: Setup go
         uses: actions/setup-go@v5
@@ -37,7 +46,7 @@ jobs:
         run: go mod download
 
       - name: Build
-        run: go build -ldflags "-X github.com/A-kirami/bestdori-live2d-downloader/pkg/version.Commit=${{ env.GITHUB_BUILD_SHA }}" -o bestdori-live2d-downloader${{ matrix.os == 'windows-latest' && '.exe' || '' }} ./cmd/bestdori-live2d-downloader
+        run: go build -ldflags "-X github.com/A-kirami/bestdori-live2d-downloader/pkg/version.Version=${{ steps.version.outputs.value }} -X github.com/A-kirami/bestdori-live2d-downloader/pkg/version.Commit=${{ env.GITHUB_BUILD_SHA }}" -o bestdori-live2d-downloader${{ matrix.os == 'windows-latest' && '.exe' || '' }} ./cmd/bestdori-live2d-downloader
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
