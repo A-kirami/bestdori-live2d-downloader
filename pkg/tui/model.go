@@ -1005,9 +1005,9 @@ func (m *Model) View() string {
 		m.Live2dList.SetShowPagination(false)
 		m.Live2dList.SetShowHelp(false)
 		if m.IsFiltering {
-			// 搜索模式：隐藏列表组件的 "No items"，自己显示一个
+			// 搜索模式：隐藏列表组件的默认空状态，显示具体的中文提示
 			if len(m.Live2dList.Items()) == 0 {
-				s.WriteString(helpStyle("  No items"))
+				s.WriteString(helpStyle("  未找到匹配的服装"))
 			} else {
 				s.WriteString(m.Live2dList.View())
 			}

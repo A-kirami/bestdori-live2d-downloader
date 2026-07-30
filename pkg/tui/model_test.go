@@ -120,6 +120,23 @@ func TestFilteringPreservesSelections(t *testing.T) {
 	require.Len(t, selected, 2)
 }
 
+func TestFilteringShowsChineseEmptyState(t *testing.T) {
+	t.Parallel()
+
+	m := tui.NewModel()
+	m.Update(tui.UpdateListMsg{
+		Items:        []*model.Live2dAsset{{Server: "jp", Costume: "001_casual"}},
+		CostumeNames: map[string]string{"001_casual": "常服"},
+	})
+
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("不存在的服装")})
+
+	view := m.View()
+	require.Contains(t, view, "未找到匹配的服装")
+	require.NotContains(t, view, "No items")
+}
+
 func TestSelectAllTogglesEveryItem(t *testing.T) {
 	t.Parallel()
 
