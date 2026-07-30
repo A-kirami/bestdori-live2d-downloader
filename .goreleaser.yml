@@ -19,7 +19,7 @@ builds:
     binary: bestdori-live2d-downloader
     dir: .
     ldflags:
-      - -s -w -X pkg/version.Version={{.Version}} -X pkg/version.Commit={{.ShortCommit}} -X pkg/version.BuiltBy=goreleaser
+      - -s -w -X github.com/A-kirami/bestdori-live2d-downloader/pkg/version.Version={{.Version}}
 
 archives:
   - format: tar.gz

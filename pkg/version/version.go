@@ -1,19 +1,24 @@
 // Package version 提供了版本信息
 package version
 
-import "fmt"
+const shortCommitLength = 7
 
-//nolint:gochecknoglobals // 这些变量用于版本信息，是 GoReleaser 的标准做法
+//nolint:gochecknoglobals // 版本信息由 CI 和 GoReleaser 在构建时注入
 var (
 	Version = "dev"
 	Commit  = "none"
-	BuiltBy = "unknown"
 )
 
 // GetVersionInfo 返回版本信息.
 func GetVersionInfo() string {
-	if BuiltBy != "goreleaser" {
+	if Commit == "" || Commit == "none" {
 		return Version
 	}
-	return fmt.Sprintf("%s-%s", Version, Commit)
+
+	commit := Commit
+	if len(commit) > shortCommitLength {
+		commit = commit[:shortCommitLength]
+	}
+
+	return Version + "-" + commit
 }
