@@ -52,6 +52,7 @@ const (
 	KeyEnter         = "enter"       // Enter 键
 	KeyUp            = "up"          // 上箭头键
 	KeyDown          = "down"        // 下箭头键
+	costumeListTitle = "选择要下载的 Live2D 模型"
 )
 
 // progressMsg 表示进度更新消息.
@@ -236,7 +237,7 @@ func NewModel() Model {
 
 	// 创建服装列表
 	l := list.New([]list.Item{}, delegate, 0, 0)
-	l.Title = "选择要下载的 Live2D 模型"
+	l.Title = costumeListTitle
 	l.SetShowHelp(true)
 	l.DisableQuitKeybindings()
 	l.AdditionalFullHelpKeys = func() []key.Binding {
@@ -633,13 +634,13 @@ func (m *Model) handleUpdateListMsg(msg UpdateListMsg) (tea.Model, tea.Cmd) {
 	m.FilterInput.Reset()
 	m.State = StateList
 	if m.CurrentCharaName != "" {
-		title := fmt.Sprintf("选择要下载的 Live2D 模型 - %s", m.CurrentCharaName)
+		title := fmt.Sprintf("%s - %s", costumeListTitle, m.CurrentCharaName)
 		if m.ExtraCharaName != "" {
 			title = fmt.Sprintf("%s (%s)", title, m.ExtraCharaName)
 		}
 		m.Live2dList.Title = title
 	} else {
-		m.Live2dList.Title = "选择要下载的 Live2D 模型"
+		m.Live2dList.Title = costumeListTitle
 	}
 	return m, nil
 }
@@ -986,14 +987,18 @@ func (m *Model) View() string {
 		if m.NamingMode == config.NamingModeOriginal {
 			namingModeStr = "原始"
 		}
-		if m.CurrentCharaName != "" {
-			title := fmt.Sprintf("选择要下载的 Live2D 模型 - %s | 命名: %s", m.CurrentCharaName, namingModeStr)
-			if m.ExtraCharaName != "" {
-				title = fmt.Sprintf("%s (%s) | 命名: %s", m.CurrentCharaName, m.ExtraCharaName, namingModeStr)
-			}
-			s.WriteString(titleStyle.Render(title))
-			s.WriteString("\n\n")
+		selectedCount, costumeCount := m.costumeSelectionStats()
+		characterName := m.CurrentCharaName
+		if m.ExtraCharaName != "" {
+			characterName = fmt.Sprintf("%s (%s)", characterName, m.ExtraCharaName)
 		}
+		title := costumeListTitle
+		if m.CurrentCharaName != "" {
+			title += " - " + characterName
+		}
+		title = fmt.Sprintf("%s | 已选 %d / %d | 命名: %s", title, selectedCount, costumeCount, namingModeStr)
+		s.WriteString(titleStyle.Render(title))
+		s.WriteString("\n\n")
 		// 搜索框
 		if m.IsFiltering {
 			s.WriteString(m.FilterInput.View())
@@ -1034,6 +1039,27 @@ func (m *Model) View() string {
 	}
 
 	return s.String()
+}
+
+// costumeSelectionStats 返回当前角色的已选服装数和服装总数.
+func (m *Model) costumeSelectionStats() (int, int) {
+	items := m.Live2dList.Items()
+	if m.IsFiltering {
+		items = m.AllCostumeItems
+	}
+
+	selected := 0
+	for _, item := range items {
+		if listEntry, ok := item.(listItem); ok && listEntry.selected {
+			selected++
+		}
+	}
+
+	total := len(m.AllCostumeItems)
+	if total == 0 {
+		total = len(items)
+	}
+	return selected, total
 }
 
 func (m *Model) AddDownloadItem(name string, totalFiles int) {

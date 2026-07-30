@@ -139,6 +139,37 @@ func TestSelectAllTogglesEveryItem(t *testing.T) {
 	require.Empty(t, m.GetSelectedItems())
 }
 
+func TestCostumeListShowsSelectionCount(t *testing.T) {
+	t.Parallel()
+
+	m := tui.NewModel()
+	m.Update(tui.UpdateListMsg{
+		Items: []*model.Live2dAsset{
+			{Server: "jp", Costume: "001_casual"},
+			{Server: "jp", Costume: "001_school"},
+			{Server: "jp", Costume: "001_stage"},
+		},
+		CostumeNames: map[string]string{
+			"001_casual": "常服",
+			"001_school": "校服",
+			"001_stage":  "舞台服",
+		},
+		CharaName: "香澄",
+	})
+
+	require.Contains(t, m.View(), "香澄 | 已选 0 / 3 | 命名: 映射后")
+	m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	require.Contains(t, m.View(), "已选 1 / 3")
+
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	require.Contains(t, m.View(), "已选 3 / 3")
+
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("校服")})
+	require.Len(t, m.Live2dList.Items(), 1)
+	require.Contains(t, m.View(), "已选 3 / 3")
+}
+
 func TestNamingModeChangesSelectedItemDisplayName(t *testing.T) {
 	t.Parallel()
 
