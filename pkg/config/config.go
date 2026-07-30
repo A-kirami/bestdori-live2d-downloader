@@ -35,6 +35,7 @@ type Config struct {
 
 	// API 配置
 	CharaRosterURL string // 角色信息 API URL
+	BandListURL    string // 乐队信息 API URL
 	// DefaultAssetServer 指定默认使用的资源服务器（例如 "jp"）
 	DefaultAssetServer string
 	ServerTags         []string                     // Bestdori 资源服务器标签 (有序)
@@ -86,6 +87,7 @@ func DefaultConfig() *Config {
 
 		// API 配置
 		CharaRosterURL:     "https://bestdori.com/api/characters",
+		BandListURL:        "https://bestdori.com/api/bands/main.1.json",
 		DefaultAssetServer: "jp",
 		ServerTags:         DefaultAssetServers(),
 		AssetServers:       DefaultAssetServersConfig(),

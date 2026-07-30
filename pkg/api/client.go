@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/A-kirami/bestdori-live2d-downloader/pkg/config"
 	"github.com/A-kirami/bestdori-live2d-downloader/pkg/log"
@@ -29,6 +30,7 @@ type Client struct {
 	charaCachePath string                              // 角色信息缓存路径
 	cacheDuration  time.Duration                       // 缓存过期时间
 	charaRosterURL string                              // 角色信息 API URL
+	bandListURL    string                              // 乐队信息 API URL
 	defaultServer  string                              // 默认 Bestdori 资源服务器标签
 	serverTags     []string                            // Bestdori 资源服务器标签 (有序)
 	assetServers   map[string]config.AssetServerConfig // Bestdori 资源服务器配置
@@ -46,6 +48,7 @@ func NewClient() *Client {
 		charaCachePath: cfg.CharaCachePath,
 		cacheDuration:  cfg.CacheDuration,
 		charaRosterURL: cfg.CharaRosterURL,
+		bandListURL:    cfg.BandListURL,
 		defaultServer:  cfg.DefaultAssetServer,
 		serverTags:     cfg.ServerTags,
 		assetServers:   cfg.AssetServers,
@@ -267,11 +270,13 @@ func (c *Client) GetCharacterInfoList(ctx context.Context) ([]CharacterInfo, err
 
 		colorCode, _ := charaInfo["colorCode"].(string)
 		colorCode = resolveCharaColor(id, colorCode)
+		bandID := parseBestdoriID(charaInfo["bandId"])
 
 		result = append(result, CharacterInfo{
-			ID:    id,
-			Name:  chineseName,
-			Color: colorCode,
+			ID:     id,
+			BandID: bandID,
+			Name:   chineseName,
+			Color:  colorCode,
 		})
 	}
 
@@ -280,6 +285,73 @@ func (c *Client) GetCharacterInfoList(ctx context.Context) ([]CharacterInfo, err
 	})
 
 	return result, nil
+}
+
+// GetBandInfoList 获取主乐队信息列表.
+func (c *Client) GetBandInfoList(ctx context.Context) ([]model.BandInfo, error) {
+	data, err := c.FetchData(ctx, c.bandListURL, "band_names_1.json")
+	if err != nil {
+		return nil, err
+	}
+
+	return parseBandInfoList(data), nil
+}
+
+func parseBandInfoList(data map[string]any) []model.BandInfo {
+	bands := make([]model.BandInfo, 0, len(data))
+	for rawID, rawInfo := range data {
+		id, err := strconv.Atoi(rawID)
+		if err != nil || id <= 0 || id > 1000 {
+			continue
+		}
+
+		info, ok := rawInfo.(map[string]any)
+		if !ok {
+			continue
+		}
+		names, ok := info["bandName"].([]any)
+		if !ok {
+			continue
+		}
+		name := normalizeBandName(selectLocalizedName(names))
+		if name == "" {
+			continue
+		}
+
+		bands = append(bands, model.BandInfo{ID: id, Name: name})
+	}
+
+	sort.Slice(bands, func(i, j int) bool {
+		return bands[i].ID < bands[j].ID
+	})
+	return bands
+}
+
+func normalizeBandName(name string) string {
+	const maxBandNameRunes = 64
+
+	name = strings.TrimSpace(name)
+	var normalized strings.Builder
+	runeCount := 0
+	for _, char := range name {
+		if unicode.IsControl(char) {
+			continue
+		}
+		if runeCount >= maxBandNameRunes {
+			break
+		}
+		normalized.WriteRune(char)
+		runeCount++
+	}
+	return normalized.String()
+}
+
+func parseBestdoriID(value any) int {
+	number, ok := value.(float64)
+	if !ok || number <= 0 || number > 1000 || number != float64(int(number)) {
+		return 0
+	}
+	return int(number)
 }
 
 func selectLocalizedName(names []any) string {

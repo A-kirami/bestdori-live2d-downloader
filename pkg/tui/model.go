@@ -31,6 +31,11 @@ var (
 	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FF69B4")) // 标题样式
 	//nolint:gochecknoglobals // 使用全局样式常量是必要的，因为需要在不同的 UI 组件中保持一致的样式
 	errorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000")).Render // 错误信息样式
+	//nolint:gochecknoglobals // Tab 样式需要在角色页渲染时复用
+	activeTabStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFFFFF")).
+			Background(lipgloss.Color("#FF69B4")).Padding(0, 1)
+	//nolint:gochecknoglobals // Tab 样式需要在角色页渲染时复用
+	inactiveTabStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#A0A0A0")).Padding(0, 1)
 )
 
 // 界面常量.
@@ -150,12 +155,19 @@ func (i charaListItem) Description() string { return "" }
 // FilterValue 返回用于过滤的值.
 func (i charaListItem) FilterValue() string { return i.name }
 
+// charaTab 表示角色选择页中的一个乐队 Tab.
+type charaTab struct {
+	name  string
+	items []list.Item
+}
+
 // Model 表示 TUI 模型
 // 包含所有 UI 组件和状态.
 type Model struct {
 	Items            map[string]*DownloadItem // 下载项映射，key 为项目名称，value 为下载项
 	ItemOrder        []string                 // 下载项顺序列表
 	Width            int                      // 界面宽度
+	Height           int                      // 界面高度
 	Quitting         bool                     // 是否正在退出程序
 	CharaList        list.Model               // 角色列表组件
 	Live2dList       list.Model               // Live2D 列表组件
@@ -178,6 +190,8 @@ type Model struct {
 	IsFiltering      bool                     // 是否处于搜索过滤模式
 	FilterInput      textinput.Model          // 搜索输入框
 	AllCostumeItems  []list.Item              // 所有服装列表项（过滤前）
+	charaTabs        []charaTab               // 按乐队分组的角色 Tab
+	activeCharaTab   int                      // 当前角色 Tab 索引
 }
 
 // DownloadDelegate 用于下载进度列表的代理
@@ -311,6 +325,7 @@ type CharaLoadRequest struct {
 // UpdateCharaListMsg 表示更新角色列表消息.
 type UpdateCharaListMsg struct {
 	Characters []model.CharacterInfo // 角色信息列表
+	Bands      []model.BandInfo      // 乐队信息列表
 }
 
 // ShowCharaListErrorMsg 表示需要在角色列表中显示的错误.
@@ -641,17 +656,105 @@ func (m *Model) handleUpdateDownloadListMsg(msg UpdateDownloadListMsg) (tea.Mode
 
 // handleUpdateCharaListMsg 处理更新角色列表消息.
 func (m *Model) handleUpdateCharaListMsg(msg UpdateCharaListMsg) (tea.Model, tea.Cmd) {
-	listItems := make([]list.Item, len(msg.Characters))
-	for i, chara := range msg.Characters {
-		listItems[i] = charaListItem{
+	itemsByBand := make(map[int][]list.Item)
+	for _, chara := range msg.Characters {
+		bandID := chara.BandID
+		if bandID < 0 {
+			bandID = 0
+		}
+		itemsByBand[bandID] = append(itemsByBand[bandID], charaListItem{
 			id:    chara.ID,
 			name:  chara.Name,
 			color: chara.Color,
-		}
+		})
 	}
-	m.CharaList.SetItems(listItems)
+
+	m.charaTabs = buildCharaTabs(itemsByBand, msg.Bands)
+	m.setActiveCharaTab(0)
+	m.updateListHeights()
 	m.State = StateCharaList
 	return m, nil
+}
+
+func buildCharaTabs(itemsByBand map[int][]list.Item, bands []model.BandInfo) []charaTab {
+	tabs := make([]charaTab, 0, len(itemsByBand))
+	addedBandIDs := make(map[int]bool, len(bands))
+	for _, band := range bands {
+		items := itemsByBand[band.ID]
+		if band.ID <= 0 || band.Name == "" || len(items) == 0 || addedBandIDs[band.ID] {
+			continue
+		}
+		tabs = append(tabs, charaTab{name: band.Name, items: items})
+		addedBandIDs[band.ID] = true
+	}
+
+	var unknownBandIDs []int
+	for bandID, items := range itemsByBand {
+		if bandID > 0 && len(items) > 0 && !addedBandIDs[bandID] {
+			unknownBandIDs = append(unknownBandIDs, bandID)
+		}
+	}
+	sort.Ints(unknownBandIDs)
+	for _, bandID := range unknownBandIDs {
+		tabs = append(tabs, charaTab{
+			name:  fmt.Sprintf("乐队 #%d", bandID),
+			items: itemsByBand[bandID],
+		})
+	}
+
+	if otherItems := itemsByBand[0]; len(otherItems) > 0 {
+		tabs = append(tabs, charaTab{name: "其他", items: otherItems})
+	}
+	return tabs
+}
+
+func (m *Model) setActiveCharaTab(index int) {
+	if len(m.charaTabs) == 0 {
+		m.activeCharaTab = 0
+		m.CharaList.SetItems(nil)
+		return
+	}
+
+	index = (index%len(m.charaTabs) + len(m.charaTabs)) % len(m.charaTabs)
+	m.activeCharaTab = index
+	m.CharaList.SetItems(m.charaTabs[index].items)
+	m.CharaList.Select(0)
+}
+
+func (m *Model) renderCharaTabs() string {
+	if len(m.charaTabs) == 0 {
+		return ""
+	}
+
+	availableWidth := m.CharaList.Width()
+	if availableWidth <= 0 {
+		availableWidth = maxWidth
+	}
+	var result strings.Builder
+	lineWidth := 0
+	for index, tab := range m.charaTabs {
+		style := inactiveTabStyle
+		if index == m.activeCharaTab {
+			style = activeTabStyle
+		}
+		renderedTab := style.Render(tab.name)
+		tabWidth := lipgloss.Width(renderedTab)
+		separatorWidth := 0
+		if lineWidth > 0 {
+			separatorWidth = 1
+		}
+		if lineWidth > 0 && lineWidth+separatorWidth+tabWidth > availableWidth {
+			result.WriteString("\n")
+			lineWidth = 0
+			separatorWidth = 0
+		}
+		if separatorWidth > 0 {
+			result.WriteString(" ")
+		}
+		result.WriteString(renderedTab)
+		lineWidth += separatorWidth + tabWidth
+	}
+	return result.String()
 }
 
 // handleShowCharaListErrorMsg 显示角色列表加载错误.
@@ -668,6 +771,12 @@ func (m *Model) handleShowCharaListErrorMsg(msg ShowCharaListErrorMsg) (tea.Mode
 // handleCharaListState 处理角色列表状态下的消息.
 func (m *Model) handleCharaListState(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
+	case "left", "shift+tab", "backtab":
+		m.setActiveCharaTab(m.activeCharaTab - 1)
+		return m, nil
+	case "right", "tab":
+		m.setActiveCharaTab(m.activeCharaTab + 1)
+		return m, nil
 	case "up":
 		if m.CharaList.Index() == 0 && len(m.CharaList.Items()) > 0 {
 			m.CharaList.Select(len(m.CharaList.Items()) - 1)
@@ -725,20 +834,35 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // handleWindowSizeMsg 处理窗口大小消息.
 func (m *Model) handleWindowSizeMsg(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	m.Width = msg.Width - padding*2 - 4
+	m.Height = msg.Height
 	if m.Width > maxWidth {
 		m.Width = maxWidth
 	}
 	for _, item := range m.Items {
 		item.Progress.Width = m.Width
 	}
-	availableHeight := msg.Height - padding*2 - 6
 	m.CharaList.SetWidth(msg.Width - padding*2)
-	m.CharaList.SetHeight(availableHeight)
 	m.Live2dList.SetWidth(msg.Width - padding*2)
-	m.Live2dList.SetHeight(availableHeight)
 	m.DownloadList.SetWidth(msg.Width - padding*2)
-	m.DownloadList.SetHeight(availableHeight)
+	m.updateListHeights()
 	return m, nil
+}
+
+func (m *Model) updateListHeights() {
+	availableHeight := m.Height - padding*2 - 6
+	if tabs := m.renderCharaTabs(); tabs != "" {
+		availableHeight -= strings.Count(tabs, "\n") + 2
+	}
+	if availableHeight < 1 {
+		availableHeight = 1
+	}
+	m.CharaList.SetHeight(availableHeight)
+	nonTabbedHeight := m.Height - padding*2 - 6
+	if nonTabbedHeight < 1 {
+		nonTabbedHeight = 1
+	}
+	m.Live2dList.SetHeight(nonTabbedHeight)
+	m.DownloadList.SetHeight(nonTabbedHeight)
 }
 
 // handleProgressMsg 处理进度消息.
@@ -835,6 +959,10 @@ func (m *Model) View() string {
 		// 自定义标题
 		s.WriteString(titleStyle.Render("选择角色"))
 		s.WriteString("\n\n")
+		if tabs := m.renderCharaTabs(); tabs != "" {
+			s.WriteString(tabs)
+			s.WriteString("\n\n")
+		}
 		// 列表内容（隐藏内置标题、分页和帮助）
 		m.CharaList.SetShowTitle(false)
 		m.CharaList.SetShowPagination(false)
@@ -845,7 +973,7 @@ func (m *Model) View() string {
 			s.WriteString(errorStyle(m.ErrorMessage))
 		}
 		s.WriteString("\n\n")
-		s.WriteString(helpStyle("上下键选择，Enter 确认，Ctrl+C 退出"))
+		s.WriteString(helpStyle("左右键/Tab 切换乐队，上下键选择，Enter 确认，Ctrl+C 退出"))
 
 	case StateLoading:
 		fmt.Fprintf(&s, "%s 正在加载...", m.Spinner.View())

@@ -173,6 +173,109 @@ func TestCharacterSelectionEntersLoadingState(t *testing.T) {
 	require.NotZero(t, request.RequestID)
 }
 
+func TestCharacterTabsGroupAndCycleCharactersByBand(t *testing.T) {
+	t.Parallel()
+
+	newTabbedModel := func() tui.Model {
+		m := tui.NewModel()
+		m.Update(tui.UpdateCharaListMsg{
+			Characters: []model.CharacterInfo{
+				{ID: 1, BandID: 1, Name: "户山香澄"},
+				{ID: 2, BandID: 1, Name: "花园多惠"},
+				{ID: 6, BandID: 2, Name: "美竹兰"},
+				{ID: 201, Name: "月岛麻里奈"},
+			},
+			Bands: []model.BandInfo{
+				{ID: 1, Name: "Poppin'Party"},
+				{ID: 2, Name: "Afterglow"},
+			},
+		})
+		return m
+	}
+
+	m := newTabbedModel()
+	require.Len(t, m.CharaList.Items(), 2)
+	require.Contains(t, m.View(), "Poppin'Party")
+	require.Contains(t, m.View(), "Afterglow")
+	require.Contains(t, m.View(), "其他")
+	require.NotContains(t, m.View(), "全部")
+
+	m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	require.Len(t, m.CharaList.Items(), 1)
+	require.Equal(t, "美竹兰", m.CharaList.Items()[0].FilterValue())
+
+	m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	require.Equal(t, "月岛麻里奈", m.CharaList.Items()[0].FilterValue())
+
+	m = newTabbedModel()
+	m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	request := <-m.GetCharaSelectChan()
+	require.Equal(t, 201, request.CharaID)
+}
+
+func TestCharacterTabFallsBackToBandIDWhenMetadataIsMissing(t *testing.T) {
+	t.Parallel()
+
+	m := tui.NewModel()
+	m.Update(tui.UpdateCharaListMsg{
+		Characters: []model.CharacterInfo{{ID: 41, BandID: 48, Name: "三角初华"}},
+	})
+
+	require.Contains(t, m.View(), "乐队 #48")
+	require.Len(t, m.CharaList.Items(), 1)
+}
+
+func TestCharacterTabsRecalculateListHeightAfterAsyncLoad(t *testing.T) {
+	t.Parallel()
+
+	m := tui.NewModel()
+	m.Update(tea.WindowSizeMsg{Width: 40, Height: 30})
+	fullHeight := m.CharaList.Height()
+	m.Update(tui.UpdateCharaListMsg{
+		Characters: []model.CharacterInfo{
+			{ID: 1, BandID: 1, Name: "户山香澄"},
+			{ID: 6, BandID: 2, Name: "美竹兰"},
+		},
+		Bands: []model.BandInfo{
+			{ID: 1, Name: "Poppin'Party"},
+			{ID: 2, Name: "Afterglow"},
+		},
+	})
+
+	require.Less(t, m.CharaList.Height(), fullHeight)
+}
+
+func TestCharacterTabsReflowWhenTerminalWidens(t *testing.T) {
+	t.Parallel()
+
+	characters := make([]model.CharacterInfo, 8)
+	bands := make([]model.BandInfo, 8)
+	bandNames := []string{
+		"Poppin'Party",
+		"Afterglow",
+		"Hello, Happy World!",
+		"Pastel＊Palettes",
+		"Roselia",
+		"RAISE A SUILEN",
+		"Morfonica",
+		"MyGO!!!!!",
+	}
+	for index, bandName := range bandNames {
+		bandID := index + 1
+		characters[index] = model.CharacterInfo{ID: bandID, BandID: bandID, Name: bandName}
+		bands[index] = model.BandInfo{ID: bandID, Name: bandName}
+	}
+
+	m := tui.NewModel()
+	m.Update(tui.UpdateCharaListMsg{Characters: characters, Bands: bands})
+	m.Update(tea.WindowSizeMsg{Width: 90, Height: 30})
+	narrowHeight := m.CharaList.Height()
+	m.Update(tea.WindowSizeMsg{Width: 180, Height: 30})
+
+	require.Greater(t, m.CharaList.Height(), narrowHeight)
+}
+
 func TestNewModelUsesConfiguredNamingMode(t *testing.T) {
 	config.Init()
 	t.Cleanup(config.Init)

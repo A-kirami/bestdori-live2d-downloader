@@ -4,7 +4,7 @@
 
 ## ✨ 主要特性
 
-- 🎨 **角色列表选择** - 支持角色颜色显示，直观选择角色
+- 🎨 **角色列表选择** - 按乐队 Tab 分类，并支持角色颜色显示
 - 🌐 **服装名称自动翻译** - 优先显示简体中文，其次繁体中文、日语、英语
 - 🔍 **服装搜索过滤** - 支持中文输入法，实时过滤搜索结果
 - 📝 **命名模式切换** - 支持中文命名和原始文件名切换
@@ -62,6 +62,7 @@
 |--------|------|--------|
 | `BaseAssetsURL` | Bestdori 资源基础 URL | `https://bestdori.com/assets/` |
 | `CharaRosterURL` | 角色信息 API URL | `https://bestdori.com/api/characters` |
+| `BandListURL` | 乐队信息 API URL | `https://bestdori.com/api/bands/main.1.json` |
 | `AssetsIndexURL` | 资源索引 API URL | `https://bestdori.com/api/assets` |
 | `Live2dSavePath` | Live2D 模型保存路径 | `./live2d_download` |
 | `LogPath` | 日志文件保存路径 | `./logs` |
@@ -84,7 +85,7 @@
    ./bestdori-live2d-downloader
    ```
 
-2. **选择角色**：使用上下键选择角色，按 `Enter` 确认
+2. **选择角色**：使用左右键或 `Tab` 切换乐队，使用上下键选择角色，按 `Enter` 确认
 
 3. **选择服装**：
    - 使用空格键选择/取消选择服装

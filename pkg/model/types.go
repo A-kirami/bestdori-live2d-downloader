@@ -133,7 +133,14 @@ type MatchChara struct {
 
 // CharacterInfo 表示角色信息（用于角色列表显示）.
 type CharacterInfo struct {
-	ID    int    // 角色ID
-	Name  string // 中文名
-	Color string // 角色颜色代码
+	ID     int    // 角色ID
+	BandID int    // 所属乐队ID；非乐队角色为0
+	Name   string // 中文名
+	Color  string // 角色颜色代码
+}
+
+// BandInfo 表示乐队信息（用于角色列表分组）.
+type BandInfo struct {
+	ID   int    // 乐队ID
+	Name string // 本地化名称
 }

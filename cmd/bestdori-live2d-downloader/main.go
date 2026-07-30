@@ -187,11 +187,16 @@ func (a *App) loadCharacterList() {
 		return
 	}
 
+	bandList, err := a.apiClient.GetBandInfoList(a.ctx)
+	if err != nil {
+		log.DefaultLogger.Warn().Err(err).Msg("加载乐队列表失败，将使用乐队 ID 作为标签")
+	}
+
 	// 过滤出有 Live2D 模型的角色
 	live2dAssets, err := a.apiClient.GetLive2dAssets(a.ctx)
 	if err != nil {
 		log.DefaultLogger.Error().Err(err).Msg("获取Live2D资源列表失败")
-		a.program.Send(tui.UpdateCharaListMsg{Characters: charaList})
+		a.program.Send(tui.UpdateCharaListMsg{Characters: charaList, Bands: bandList})
 		return
 	}
 
@@ -216,7 +221,7 @@ func (a *App) loadCharacterList() {
 	}
 
 	log.DefaultLogger.Info().Int("count", len(filteredList)).Msg("加载角色列表成功")
-	a.program.Send(tui.UpdateCharaListMsg{Characters: filteredList})
+	a.program.Send(tui.UpdateCharaListMsg{Characters: filteredList, Bands: bandList})
 }
 
 // getLive2dPath 根据 Live2D 名称获取保存路径.

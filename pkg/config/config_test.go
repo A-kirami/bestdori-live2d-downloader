@@ -28,6 +28,7 @@ func TestDefaultConfig(t *testing.T) {
 	assetServer := cfg.AssetServers[cfg.DefaultAssetServer]
 	assert.Equal(t, "https://bestdori.com/assets/jp", assetServer.BaseAssetsURL, "BaseAssetsURL should be correct")
 	assert.Equal(t, "https://bestdori.com/api/characters", cfg.CharaRosterURL, "CharaRosterURL should be correct")
+	assert.Equal(t, "https://bestdori.com/api/bands/main.1.json", cfg.BandListURL, "BandListURL should be correct")
 	assert.Equal(
 		t,
 		"https://bestdori.com/api/explorer/jp/assets/_info.json",
@@ -60,6 +61,7 @@ func TestInit(t *testing.T) {
 	curAssetServer := cfg.AssetServers[cfg.DefaultAssetServer]
 	assert.Equal(t, defAssetServer.BaseAssetsURL, curAssetServer.BaseAssetsURL, "BaseAssetsURL should match default")
 	assert.Equal(t, defaultCfg.CharaRosterURL, cfg.CharaRosterURL, "CharaRosterURL should match default")
+	assert.Equal(t, defaultCfg.BandListURL, cfg.BandListURL, "BandListURL should match default")
 	assert.Equal(t, defAssetServer.AssetsIndexURL, curAssetServer.AssetsIndexURL, "AssetsIndexURL should match default")
 	assert.Equal(
 		t,
@@ -76,6 +78,7 @@ func TestGet(t *testing.T) {
 	assetServer := cfg.AssetServers[cfg.DefaultAssetServer]
 	assert.NotEmpty(t, assetServer.BaseAssetsURL, "BaseAssetsURL should not be empty")
 	assert.NotEmpty(t, cfg.CharaRosterURL, "CharaRosterURL should not be empty")
+	assert.NotEmpty(t, cfg.BandListURL, "BandListURL should not be empty")
 	assert.NotEmpty(t, assetServer.AssetsIndexURL, "AssetsIndexURL should not be empty")
 	assert.NotEmpty(t, cfg.Live2dSavePath, "Live2dSavePath should not be empty")
 	assert.NotEmpty(t, cfg.CharaCachePath, "CharaCachePath should not be empty")
